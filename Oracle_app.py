@@ -5,7 +5,7 @@ import re
 from difflib import get_close_matches
 from PIL import Image
 
-st.set_page_config(page_title="Oracle V15.6 - Smart Blocks", layout="wide")
+st.set_page_config(page_title="Oracle V15.7 - Full Vision", layout="wide")
 
 @st.cache_resource
 def load_ocr():
@@ -27,11 +27,11 @@ class OracleEngine:
         return m[0] if m else None
 
 engine = OracleEngine()
-st.title("🔮 ORACLE V15.6 : VISION TOTALE")
+st.title("🔮 ORACLE V15.7 : FINAL FIX")
 
 tabs = st.tabs(["📅 CALENDRIER", "🎯 PRONOS", "⚽ RÉSULTATS"])
 
-# --- TAB 1 : CALENDRIER (Rétabli complètement) ---
+# --- TAB 1 : CALENDRIER (Sécurisé) ---
 with tabs[0]:
     file_cal = st.file_uploader("📸 Scan Calendrier", type=['jpg','png','jpeg'], key="up_cal")
     if file_cal:
@@ -59,9 +59,9 @@ with tabs[0]:
                 c1, c2, c3, c4, c5 = st.columns([2, 2, 1, 1, 1])
                 hf = c1.selectbox(f"Dom {i+1}", engine.teams_list, index=engine.teams_list.index(m['h']) if m['h'] in engine.teams_list else 0)
                 af = c2.selectbox(f"Ext {i+1}", engine.teams_list, index=engine.teams_list.index(m['a']) if m['a'] in engine.teams_list else 0)
-                o1 = c3.number_input("C1", value=m['o'][0], key=f"c1_{i}", format="%.2f")
-                ox = c4.number_input("CX", value=m['o'][1], key=f"cx_{i}", format="%.2f")
-                o2 = c5.number_input("C2", value=m['o'][2], key=f"c2_{i}", format="%.2f")
+                o1 = c3.number_input("C1", value=m['o'][0], key=f"c1_{i}")
+                ox = c4.number_input("CX", value=m['o'][1], key=f"cx_{i}")
+                o2 = c5.number_input("C2", value=m['o'][2], key=f"c2_{i}")
                 validated.append({'h': hf, 'a': af, 'o': [o1, ox, o2], 'day': day_sel})
             if st.form_submit_button("🔥 GÉNÉRER PRONOSTICS"):
                 st.session_state['ready_v15'] = validated
@@ -74,32 +74,33 @@ with tabs[1]:
             s_a = int((3.0 / m['o'][2]) + 0.2)
             st.info(f"**{m['h']} {s_h} - {s_a} {m['a']}**")
 
-# --- TAB 3 : RÉSULTATS (Moteur de détection dynamique) ---
+# --- TAB 3 : RÉSULTATS (Correction du 10ème match) ---
 with tabs[2]:
     file_res = st.file_uploader("📸 Scan Résultats", type=['jpg','png','jpeg'], key="up_res")
     if file_res:
         img = Image.open(file_res)
         mid_x = img.size[0] / 2
         
-        with st.spinner("Analyse des blocs de matchs..."):
+        with st.spinner("Analyse du 1er au 10ème match..."):
             res_raw = reader.readtext(file_res.getvalue(), detail=1)
-            res_raw.sort(key=lambda x: x[0][0][1]) # Tri par hauteur (Y)
+            res_raw.sort(key=lambda x: x[0][0][1])
             
-            # 1. On identifie les positions Y de chaque équipe domicile
+            # Identification des ancres (équipes à gauche)
             match_anchors = []
             for (bbox, text, prob) in res_raw:
                 team = engine.clean_team(text)
-                # Si l'équipe est à gauche du milieu, c'est un point d'ancrage de match
                 if team and (bbox[0][0] + bbox[1][0])/2 < mid_x:
-                    match_anchors.append({"name": team, "y": bbox[0][1]})
+                    # On évite les doublons d'ancres trop proches
+                    if not match_anchors or abs(bbox[0][1] - match_anchors[-1]["y"]) > 30:
+                        match_anchors.append({"name": team, "y": bbox[0][1]})
 
-            # 2. On crée les blocs de matchs
             matches = []
             for i, anchor in enumerate(match_anchors):
                 if len(matches) >= 10: break
                 
-                y_top = anchor["y"] - 10
-                y_bottom = match_anchors[i+1]["y"] - 10 if i+1 < len(match_anchors) else 10000
+                y_top = anchor["y"] - 20
+                # CRITIQUE : Si c'est le dernier match, on prend TOUT jusqu'à la fin de l'image (9999)
+                y_bottom = match_anchors[i+1]["y"] - 10 if i+1 < len(match_anchors) else 9999
                 
                 m_info = {"h": anchor["name"], "a": "Inconnu", "s": "0:0", "h_m": "", "a_m": "", "mt": ""}
                 
@@ -109,33 +110,36 @@ with tabs[2]:
                     
                     if y_top <= curr_y <= y_bottom:
                         t_name = engine.clean_team(text)
-                        # Equipe Extérieure (à droite du milieu)
+                        # Equipe Extérieure
                         if t_name and curr_x > mid_x:
                             m_info["a"] = t_name
                         # Score Final (ex: 2:1)
-                        elif re.search(r"^\d[:\-]\d$", text.strip()):
+                        elif re.search(r"^\d[:\-]\d$", text.strip()) and "MT" not in text.upper():
                             m_info["s"] = text
                         # Mi-temps
                         elif "MT" in text.upper():
                             m_info["mt"] = text
-                        # Minutes de buts
-                        elif re.search(r"\d+'?", text) and not re.search(r"^\d[:\-]\d$", text):
+                        # Minutes (on exclut les scores)
+                        elif re.search(r"\d+", text) and not re.search(r"^\d[:\-]\d$", text):
                             if curr_x < mid_x: m_info["h_m"] += f" {text}"
                             else: m_info["a_m"] += f" {text}"
                 
                 matches.append(m_info)
 
-            with st.form("form_res_dynamic"):
+            with st.form("form_res_v15_7"):
                 for i in range(10):
-                    m = matches[i] if i < len(matches) else {"h":"Leeds","a":"Brighton","s":"0:0","h_m":"","a_m":"","mt":""}
+                    m = matches[i] if i < len(matches) else {"h":"Inconnu","a":"Inconnu","s":"0:0","h_m":"","a_m":"","mt":""}
                     c1, sc, c2 = st.columns([2, 1, 2])
-                    c1.selectbox(f"H{i}", engine.teams_list, index=engine.teams_list.index(m['h']) if m['h'] in engine.teams_list else 0, key=f"rh{i}")
-                    sc.text_input("Score", m['s'], key=f"rs{i}")
-                    c2.selectbox(f"A{i}", engine.teams_list, index=engine.teams_list.index(m['a']) if m['a'] in engine.teams_list else 1, key=f"ra{i}")
+                    idx_h = engine.teams_list.index(m['h']) if m['h'] in engine.teams_list else 0
+                    idx_a = engine.teams_list.index(m['a']) if m['a'] in engine.teams_list else 1
+                    
+                    c1.selectbox(f"H{i}", engine.teams_list, index=idx_h, key=f"rh{i}")
+                    sc.text_input("Score Final", m['s'], key=f"rs{i}")
+                    c2.selectbox(f"A{i}", engine.teams_list, index=idx_a, key=f"ra{i}")
                     
                     m1, m2, mt = st.columns([2, 2, 1])
                     m1.text_input("Buts Dom", m['h_m'].strip(), key=f"rm1{i}")
                     m2.text_input("Buts Ext", m['a_m'].strip(), key=f"rm2{i}")
-                    mt.text_input("MT", m['mt'], key=f"rmt{i}")
+                    mt.text_input("Score MT", m['mt'], key=f"rmt{i}")
                     st.divider()
-                st.form_submit_button("✅ SAUVEGARDER RÉSULTATS")
+                st.form_submit_button("✅ TOUT SAUVEGARDER")
