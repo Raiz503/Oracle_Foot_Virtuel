@@ -5,7 +5,7 @@ import re
 from difflib import get_close_matches
 from PIL import Image
 
-st.set_page_config(page_title="Oracle V17.4 - Final Fix", layout="wide")
+st.set_page_config(page_title="Oracle V17.5 - Hybrid Edition", layout="wide")
 
 @st.cache_resource
 def load_ocr():
@@ -30,7 +30,7 @@ engine = OracleEngine()
 
 if 'saison_nom' not in st.session_state: st.session_state['saison_nom'] = "Saison 2026"
 
-st.title(f"🔮 ORACLE V17.4")
+st.title(f"🔮 ORACLE V17.5")
 
 tabs = st.tabs(["🌟 SAISON", "📅 CALENDRIER", "🎯 PRONOS & TICKETS", "⚽ RÉSULTATS"])
 
@@ -42,23 +42,20 @@ with tabs[0]:
             if key in st.session_state: del st.session_state[key]
         st.rerun()
 
-# --- TAB 1 : CALENDRIER (Correction Cotes Match 10) ---
+# --- TAB 1 : CALENDRIER (MOTEUR V12 REPRIS) ---
 with tabs[1]:
     file_cal = st.file_uploader("📸 Scan Calendrier", type=['jpg','png','jpeg'], key="up_cal")
     if file_cal:
-        # Lecture complète pour ne rien rater en bas d'image
         res = reader.readtext(file_cal.read(), detail=0)
         f_teams, f_odds = [], []
         for t in res:
             name = engine.clean_team(t)
             if name: f_teams.append(name)
             
-            # Recherche de nombres type X.XX ou X,XX
             nums = re.findall(r"\d+[\.,]\d+", t)
             if nums:
                 for n in nums:
                     val = float(n.replace(',', '.'))
-                    # Filtre pour éviter de prendre des scores comme cotes
                     if 1.01 <= val <= 50.0:
                         f_odds.append(val)
         
@@ -66,7 +63,7 @@ with tabs[1]:
         for i in range(10):
             h = f_teams[i*2] if len(f_teams) > i*2 else "Inconnu"
             a = f_teams[i*2+1] if len(f_teams) > i*2+1 else "Inconnu"
-            # On pioche les cotes 3 par 3
+            # Slicing V12 pour les cotes (C1, CX, C2)
             o = f_odds[i*3:i*3+3] if len(f_odds) >= i*3+3 else [1.50, 3.40, 4.20]
             st.session_state['cal_v16'].append({'h': h, 'a': a, 'o': o})
 
@@ -84,19 +81,17 @@ with tabs[1]:
             if st.form_submit_button("🔥 GÉNÉRER ANALYSE"):
                 st.session_state['ready_v16'] = validated
 
-# --- TAB 2 : PRONOS & TICKETS ---
+# --- TAB 2 : PRONOS & TICKETS (Logique V17.2) ---
 with tabs[2]:
     if 'ready_v16' in st.session_state:
         t_safe, t_risque, t_fun = [], [], []
         for m in st.session_state['ready_v16']:
-            # Calcul Score Probable
             s_h = int((3.0 / m['o'][0]) + 0.4) if m['o'][0] > 0 else 0
             s_a = int((3.0 / m['o'][2]) + 0.1) if m['o'][2] > 0 else 0
             st.info(f"⚽ **{m['h']} {s_h} - {s_a} {m['a']}** (Cotes: {m['o'][0]} | {m['o'][1]} | {m['o'][2]})")
             
-            # Logique Tickets
             if m['o'][0] < 1.6 or m['o'][2] < 1.6: t_safe.append(f"{m['h']} / {m['a']}")
-            if 1.7 <= m['o'][0] <= 2.6: t_risque.append(f"Gagne: {m['h']}")
+            if 1.7 <= m['o'][0] <= 2.6: t_risque.append(f"Victoire {m['h']}")
             if m['o'][1] > 3.6: t_fun.append(f"Nul: {m['h']}-{m['a']}")
 
         st.divider()
@@ -105,7 +100,7 @@ with tabs[2]:
         with c2: st.warning("🟡 **TICKET RISQUE**\n\n" + "\n".join(t_risque[:3]))
         with c3: st.error("🔴 **TICKET FUN**\n\n" + "\n".join(t_fun[:3]))
 
-# --- TAB 3 : RÉSULTATS (STRICT V16.2 - AUCUN CHANGEMENT) ---
+# --- TAB 3 : RÉSULTATS (STRICT V17.2 / V16.2 ANCHOR PRECISION) ---
 with tabs[3]:
     file_res = st.file_uploader("📸 Scan Résultats", type=['jpg','png','jpeg'], key="up_res")
     if file_res:
