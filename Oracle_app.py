@@ -7,10 +7,11 @@ import re
 from difflib import get_close_matches
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Oracle V15.1 - Fusion & Précision", layout="wide")
+st.set_page_config(page_title="Oracle V15.2 - Vision Stable", layout="wide")
 
 @st.cache_resource
 def load_ocr():
+    # GPU=False pour la stabilité sur tous les appareils
     return easyocr.Reader(['en', 'fr'], gpu=False)
 
 reader = load_ocr()
@@ -30,11 +31,11 @@ class OracleEngine:
         return m[0] if m else None
 
 engine = OracleEngine()
-st.title("🔮 ORACLE V15.1 : FUSION & VISION")
+st.title("🔮 ORACLE V15.2")
 
 tabs = st.tabs(["📅 CALENDRIER", "🎯 PRONOS", "⚽ RÉSULTATS"])
 
-# --- TAB 1 : CALENDRIER (Logique V15 originale conservée) ---
+# --- TAB 1 : CALENDRIER (Base V12 intégrée) ---
 with tabs[0]:
     file_cal = st.file_uploader("📸 Scan Calendrier", type=['jpg','png','jpeg'], key="up_cal")
     if file_cal:
@@ -83,58 +84,57 @@ with tabs[1]:
             score_a = int((3.0 / m['o'][2]) + 0.2)
             st.info(f"**{m['h']} {score_h} - {score_a} {m['a']}**")
 
-# --- TAB 3 : RÉSULTATS (Moteur de scan corrigé) ---
+# --- TAB 3 : RÉSULTATS (Moteur Corrigé Anti-mélange) ---
 with tabs[2]:
     file_res = st.file_uploader("📸 Scan Résultats", type=['jpg','png','jpeg'], key="up_res")
     if file_res:
-        with st.spinner("Analyse structurelle des matchs..."):
+        with st.spinner("Analyse ligne par ligne..."):
             res_raw = reader.readtext(file_res.read(), detail=1)
-            # Tri vertical strict (Y)
+            # Tri vertical strict (Y) : On lit de haut en bas sans exception
             res_raw.sort(key=lambda x: x[0][0][1])
             
             matches = []
             current = {"h": None, "a": None, "s": "0:0", "h_m": "", "a_m": "", "mt": ""}
             
             for (bbox, text, prob) in res_raw:
-                # 1. Nettoyage
+                # Filtrage des bruits
                 if any(x in text for x in ["MGA", "22:08", "Bet 26", "+21", "Journée"]): continue
                 
-                # 2. Détection Equipe
                 team = engine.clean_team(text)
                 if team:
-                    # Sécurité : si on trouve une nouvelle équipe domicile alors que le match précédent n'est pas "fermé"
-                    if current["h"] and current["a"] and (current["s"] != "0:0" or "MT" in current["mt"]):
+                    # Si on trouve une équipe alors qu'on a déjà les deux du match précédent, on valide le match fini
+                    if current["h"] and current["a"]:
                         matches.append(current)
                         current = {"h": None, "a": None, "s": "0:0", "h_m": "", "a_m": "", "mt": ""}
                     
                     if not current["h"]: current["h"] = team
                     elif not current["a"]: current["a"] = team
                 
-                # 3. Détection Score
                 elif re.search(r"\d[:\-]\d", text): 
                     current["s"] = text
                 
-                # 4. Détection Mi-temps
                 elif "MT" in text:
                     current["mt"] = text
-                    # On ferme le bloc match au signal de la Mi-Temps
+                    # Une mi-temps indique souvent la fin d'un bloc visuel
                     if current["h"] and current["a"]:
                         matches.append(current)
                         current = {"h": None, "a": None, "s": "0:0", "h_m": "", "a_m": "", "mt": ""}
                 
-                # 5. Détection Minutes (Placement par axe X)
                 elif re.search(r"\d+'?", text):
+                    # Séparation par axe X (Gauche < 450 < Droite)
                     x_center = (bbox[0][0] + bbox[1][0]) / 2
-                    if x_center < 450: # Côté gauche
-                        current["h_m"] += f" {text}"
-                    else: # Côté droit
-                        current["a_m"] += f" {text}"
+                    if x_center < 450: current["h_m"] += f" {text}"
+                    else: current["a_m"] += f" {text}"
 
-            with st.form("form_res_fusion"):
+            # Si le dernier match n'a pas été ajouté (pas de MT détectée)
+            if current["h"] and current["a"] and current not in matches:
+                matches.append(current)
+
+            with st.form("form_res_fixed"):
                 for i in range(10):
                     m = matches[i] if i < len(matches) else {"h": "Leeds", "a": "Brighton", "s": "0:0", "h_m": "", "a_m": "", "mt": ""}
                     c1, sc, c2 = st.columns([2, 1, 2])
-                    # Correction index pour éviter les erreurs de liste
+                    
                     idx_h = engine.teams_list.index(m['h']) if m['h'] in engine.teams_list else 0
                     idx_a = engine.teams_list.index(m['a']) if m['a'] in engine.teams_list else 1
                     
@@ -143,8 +143,8 @@ with tabs[2]:
                     c2.selectbox(f"A{i}", engine.teams_list, index=idx_a, key=f"ra{i}")
                     
                     m1, m2, m3 = st.columns([2, 2, 1])
-                    m1.text_input("Buts Dom", m['h_m'].strip(), key=f"rm1{i}")
-                    m2.text_input("Buts Ext", m['a_m'].strip(), key=f"rm2{i}")
+                    m1.text_input("Minutes Domicile", m['h_m'].strip(), key=f"rm1{i}")
+                    m2.text_input("Minutes Extérieur", m['a_m'].strip(), key=f"rm2{i}")
                     m3.text_input("MT", m['mt'], key=f"rmt{i}")
                     st.divider()
-                st.form_submit_button("✅ ENREGISTRER RÉSULTATS")
+                st.form_submit_button("✅ SAUVEGARDER LA JOURNÉE")
