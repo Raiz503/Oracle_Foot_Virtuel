@@ -3,96 +3,110 @@ import pandas as pd
 import json
 import os
 import easyocr
-from difflib import get_close_matches
 
-# --- CONFIGURATION DE L'APPLICATION ---
-st.set_page_config(page_title="Oracle Football Predictor", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Oracle Predictor", layout="centered")
 
 class OracleEngine:
     def __init__(self):
         self.db_path = 'oracle_database.json'
         self.teams_list = [
-            "London Reds", "Manchester Blue", "Liverpool", "Newcastle", 
-            "Brentford", "Sunderland", "Everton", "A. Villa", "Burnley", "Leeds"
-        ] # Ajoute les 20 noms exacts ici
+            "Leeds", "Brighton", "A. Villa", "Manchester Blue", "C. Palace", 
+            "Bournemouth", "Spurs", "Burnley", "West Ham", "Liverpool", 
+            "Fulham", "Newcastle", "Manchester Red", "Everton", "London Blues", 
+            "Wolverhampton", "Sunderland", "N. Forest", "London Reds", "Brentford"
+        ]
         self.data = self.load_db()
 
     def load_db(self):
         if os.path.exists(self.db_path):
-            with open(self.db_path, 'r') as f: return json.load(f)
-        return {"teams": {}, "history": []}
+            try:
+                with open(self.db_path, 'r') as f: return json.load(f)
+            except: pass
+        return {"teams": {name: {"att": 0.5, "def": 0.5, "pts": 0, "rank": 10, "streak": []} for name in self.teams_list}}
 
     def save_db(self):
         with open(self.db_path, 'w') as f: json.dump(self.data, f, indent=4)
 
-    def get_team_stats(self, name):
-        # Correction automatique du nom via Fuzzy Matching
-        match = get_close_matches(name, self.teams_list, n=1, cutoff=0.6)
-        clean_name = match[0] if match else name
-        
-        if clean_name not in self.data["teams"]:
-            self.data["teams"][clean_name] = {
-                "att": 0.5, "def": 0.5, "pts": 0, "rank": 10, "streak": []
-            }
-        return clean_name, self.data["teams"][clean_name]
-
-    def predict(self, home_raw, away_raw, cotes, day):
-        h_name, h_stats = self.get_team_stats(home_raw)
-        a_name, a_stats = self.get_team_stats(away_raw)
-        
-        # Logique de calcul
+    def predict_logic(self, h, a, cotes, day):
+        h_s, a_s = self.data["teams"][h], self.data["teams"][a]
         p1, px, p2 = 1/cotes[0], 1/cotes[1], 1/cotes[2]
+        # Modules stratégiques
+        if day >= 34 and h_s["rank"] >= 17: p1 += 0.20
+        if h_s["streak"][-3:].count("W") == 3: p1 -= 0.12
         
-        # Bonus MSS / Fatigue
-        if day >= 34 and h_stats["rank"] >= 17: p1 += 0.15
-        if len(h_stats["streak"]) >= 3 and h_stats["streak"][-3:].count("W") == 3: p1 -= 0.10
-        
-        # Décision
-        res = "1" if p1 > p2 else "2"
-        conf = max(p1, p2) / (p1 + px + p2)
-        return h_name, a_name, res, round(conf*100, 1)
+        btts_val = (h_s["att"] * (1 - a_s["def"])) + (a_s["att"] * (1 - h_s["def"]))
+        res = "1" if p1 > p2 else ("2" if p2 > p1 else "X")
+        conf = (max(p1, p2) / (p1+px+p2)) * 100
+        return {"match": f"{h} vs {a}", "res": res, "conf": conf, "btts": "OUI" if btts_val > 0.6 else "NON", "cotes": cotes}
 
-# --- INTERFACE STREAMLIT ---
-st.title("🔮 Oracle Football Predictor Pro")
+# --- INTERFACE ---
 engine = OracleEngine()
+st.title("🔮 L'ORACLE : SYSTÈME DE TICKETS")
 
-tab1, tab2, tab3 = st.tabs(["🎯 Pronostics", "📊 Classement", "⚙️ Configuration"])
+tab1, tab2, tab3 = st.tabs(["📸 Import & Analyse", "📊 Classement", "🏆 Tickets du Jour"])
 
 with tab1:
-    st.header("Analyse de Match")
-    col1, col2 = st.columns(2)
+    mode = st.radio("Type d'importation :", ["Calendrier (Prédiction)", "Résultats (Mise à jour)"])
+    img_file = st.file_uploader("Prendre une photo", type=['jpg','png','jpeg'])
     
-    with col1:
-        img_file = st.file_uploader("Importer capture (Calendrier)", type=['jpg', 'png', 'jpeg'])
-        if img_file:
-            st.image(img_file, caption="Scan en cours...", width=300)
-            # Ici l'OCR s'active
-            reader = easyocr.Reader(['en'])
-            result = reader.readtext(img_file.read(), detail=0)
-            st.write("Mots détectés :", result)
-
-    with col2:
-        st.subheader("Entrée Manuelle / Validation")
-        h = st.selectbox("Équipe Domicile", engine.teams_list)
-        a = st.selectbox("Équipe Extérieur", engine.teams_list)
-        c1 = st.number_input("Cote 1", value=1.50)
-        cx = st.number_input("Cote X", value=3.40)
-        c2 = st.number_input("Cote 2", value=5.00)
-        day = st.slider("Journée", 1, 38, 36)
+    # Simulation de l'extraction OCR éditable
+    st.subheader("📝 Édition des données extraites")
+    with st.form("form_ocr"):
+        col1, col2, col3 = st.columns(3)
+        h = col1.selectbox("Domicile", engine.teams_list)
+        a = col2.selectbox("Extérieur", engine.teams_list)
         
-        if st.button("Lancer l'Oracle"):
-            h_n, a_n, res, conf = engine.predict(h, a, [c1, cx, c2], day)
-            st.success(f"Résultat prédit : {res}")
-            st.metric("Indice de Confiance", f"{conf}%")
-
-with tab2:
-    st.header("Classement de la Ligue")
-    df = pd.DataFrame.from_dict(engine.data["teams"], orient='index')
-    if not df.empty:
-        st.table(df.sort_values(by="pts", ascending=False))
+        if mode == "Calendrier (Prédiction)":
+            c1 = col1.number_input("Cote 1", 1.0, 20.0, 1.5)
+            cx = col2.number_input("Cote X", 1.0, 20.0, 3.5)
+            c2 = col3.number_input("Cote 2", 1.0, 20.0, 5.0)
+            jour = st.slider("Journée", 1, 38, 30)
+            
+            if st.form_submit_button("Valider & Analyser"):
+                analysis = engine.predict_logic(h, a, [c1, cx, c2], jour)
+                st.session_state['last_analysed'] = analysis
+                st.success("Analyse terminée. Consultez l'onglet 'Tickets'.")
+        
+        else:
+            sh = col1.number_input("Score Dom", 0, 15, 0)
+            sa = col2.number_input("Score Ext", 0, 15, 0)
+            if st.form_submit_button("Valider le Résultat"):
+                # Mise à jour IA
+                if sh > sa: engine.data["teams"][h]["pts"] += 3
+                elif sa > sh: engine.data["teams"][a]["pts"] += 3
+                else: 
+                    engine.data["teams"][h]["pts"] += 1
+                    engine.data["teams"][a]["pts"] += 1
+                engine.save_db()
+                st.balloons()
 
 with tab3:
-    if st.button("Réinitialiser la Base de Données"):
-        engine.data = {"teams": {}, "history": []}
-        engine.save_db()
-        st.warning("Données effacées.")
+    if 'last_analysed' in st.session_state:
+        ans = st.session_state['last_analysed']
+        st.subheader("🎫 Tes 3 Options de Ticket")
+        
+        c1, c2, c3 = st.columns(3)
+        
+        with c1:
+            st.info("**TICKET SÉCURISÉ**")
+            st.write(f"{ans['match']}")
+            st.write(f"Prono: **Double Chance**")
+            st.write("Fiabilité: ⭐⭐⭐⭐⭐")
+            
+        with c2:
+            st.warning("**TICKET ÉQUILIBRÉ**")
+            st.write(f"{ans['match']}")
+            st.write(f"Prono: **{ans['res']}**")
+            st.write(f"BTTS: **{ans['btts']}**")
+            
+        with c3:
+            st.error("**TICKET ORACLE**")
+            st.write(f"{ans['match']}")
+            st.write(f"Prono: **{ans['res']} & {ans['btts']}**")
+            st.write(f"Confiance: **{ans['conf']}%**")
+    else:
+        st.write("Veuillez d'abord analyser un match dans l'onglet 1.")
+
+with tab2:
+    st.dataframe(pd.DataFrame.from_dict(engine.data["teams"], orient='index').sort_values("pts", ascending=False))
