@@ -10,50 +10,32 @@ from PIL import Image
 # Configuration
 st.set_page_config(page_title="Oracle Mahita", layout="wide")
 
-# --- STYLE CSS (Oracle Mahita Design) ---
+# --- STYLE CSS ---
 st.markdown("""
     <style>
     .main-header {
-        text-align: center;
-        padding: 20px;
-        border: 4px solid #7FFFD4;
-        border-radius: 15px;
-        background-color: #0E1117;
-        box-shadow: 0px 0px 25px #7FFFD4;
-        margin-bottom: 10px;
+        text-align: center; padding: 20px; border: 4px solid #7FFFD4;
+        border-radius: 15px; background-color: #0E1117;
+        box-shadow: 0px 0px 25px #7FFFD4; margin-bottom: 10px;
     }
     .header-title {
-        color: #FFFFFF;
-        font-size: 3em;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 5px;
-        margin: 0;
-        -webkit-text-stroke: 1.5px #7FFFD4;
-        text-shadow: 0px 0px 10px #7FFFD4;
+        color: #FFFFFF; font-size: 3em; font-weight: 900;
+        text-transform: uppercase; letter-spacing: 5px; margin: 0;
+        -webkit-text-stroke: 1.5px #7FFFD4; text-shadow: 0px 0px 10px #7FFFD4;
     }
-    .info-center {
-        text-align: center;
-        color: #7FFFD4;
-        font-weight: bold;
-        margin-top: 5px;
-    }
+    .info-center { text-align: center; color: #7FFFD4; font-weight: bold; }
     .next-day-glow {
-        color: #FFFFFF;
-        background: rgba(127, 255, 212, 0.2);
-        padding: 5px 15px;
-        border-radius: 10px;
-        border: 1px solid #7FFFD4;
-        display: inline-block;
-        margin-top: 10px;
+        color: #FFFFFF; background: rgba(127, 255, 212, 0.2);
+        padding: 5px 15px; border-radius: 10px; border: 1px solid #7FFFD4;
+        display: inline-block; margin-top: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
 
 def custom_notify(text):
-    st.markdown(f"""<div style="padding:15px; border:3px solid #00FF00; border-radius:10px; background-color:#0E1117; color:#FFFFFF; text-align:center; font-weight:900; box-shadow:0px 0px 20px #00FF00; margin:15px 0px; font-size:1.2em; -webkit-text-stroke:1px #00FF00;">{text}</div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div style="padding:15px; border:3px solid #00FF00; border-radius:10px; background-color:#0E1117; color:#FFFFFF; text-align:center; font-weight:900; box-shadow:0px 0px 20px #00FF00; margin:15px 0px; font-size:1.2em;">{text}</div>""", unsafe_allow_html=True)
 
-# --- LOGIQUE CALCUL CLASSEMENT ---
+# --- LOGIQUE CALCUL CLASSEMENT (AVEC RANG) ---
 def get_standings(season_data, teams_list):
     stats = {team: {"MJ": 0, "V": 0, "N": 0, "D": 0, "BP": 0, "BC": 0, "Diff": 0, "Pts": 0} for team in teams_list}
     for jk, data in season_data.items():
@@ -71,8 +53,13 @@ def get_standings(season_data, teams_list):
                         else: stats[h]["N"] += 1; stats[h]["Pts"] += 1; stats[a]["N"] += 1; stats[a]["Pts"] += 1
                 except: continue
     for t in stats: stats[t]["Diff"] = stats[t]["BP"] - stats[t]["BC"]
+    
     df = pd.DataFrame.from_dict(stats, orient='index').reset_index().rename(columns={'index': 'Équipe'})
-    return df.sort_values(by=["Pts", "Diff", "BP"], ascending=False).reset_index(drop=True)
+    df = df.sort_values(by=["Pts", "Diff", "BP"], ascending=False).reset_index(drop=True)
+    
+    # Ajout du numéro de Rang (1, 2, 3...)
+    df.insert(0, 'Rang', range(1, len(df) + 1))
+    return df
 
 # --- GESTION BDD ---
 DB_FILE = "oracle_history.json"
@@ -90,31 +77,25 @@ if 'history' not in st.session_state:
     st.session_state['history'] = load_db()
     if not st.session_state['history']: st.session_state['history']["Saison 2026"] = {}
 
-# --- EN-TÊTE MAHITA ---
+# --- EN-TÊTE ---
 st.markdown('<div class="main-header"><h1 class="header-title">Oracle Mahita</h1></div>', unsafe_allow_html=True)
 
-c_left, c_mid, c_right = st.columns([1, 1, 1])
-with c_mid:
+c_l, c_m, c_r = st.columns([1, 1, 1])
+with c_m:
     saisons = list(st.session_state['history'].keys())
     s_active = st.selectbox("Saison", saisons, label_visibility="collapsed")
     st.session_state['s_active'] = s_active
     
-    # Logique de la Prochaine Journée automatique
+    # Journée suivante auto
     existing_days = []
     for k, v in st.session_state['history'][s_active].items():
-        if v.get("res"): # On cherche la dernière journée ayant des résultats
+        if v.get("res"):
             match = re.search(r'\d+', k)
             if match: existing_days.append(int(match.group()))
-    
     next_day = max(existing_days) + 1 if existing_days else 1
     st.session_state['next_day'] = next_day
     
-    st.markdown(f"""
-        <div style="text-align:center;">
-            <div class="info-center">SAISON ACTIVE : {s_active}</div>
-            <div class="next-day-glow">PRÉDIRE : JOURNÉE {next_day}</div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align:center;"><div class="next-day-glow">PRÉDIRE : JOURNÉE {next_day}</div></div>', unsafe_allow_html=True)
 
 # --- MOTEUR ---
 @st.cache_resource
@@ -130,20 +111,18 @@ class OracleEngine:
 
 engine = OracleEngine()
 
-# --- NAVIGATION ---
+# --- ONGLETS ---
 tabs = st.tabs(["🏆 CLASSEMENT GÉNÉRAL", "📅 CALENDRIER", "🎯 PRONOS", "⚽ RÉSULTATS", "📚 HISTORIQUE", "⚙️"])
 
-# --- TAB 1 : CLASSEMENT GÉNÉRAL ---
+# --- TAB 1 : CLASSEMENT ---
 with tabs[0]:
-    st.subheader(f"Classement Actuel - {s_active}")
-    df_actual = get_standings(st.session_state['history'][s_active], engine.teams_list)
-    st.table(df_actual)
+    st.subheader(f"Classement - {s_active}")
+    st.table(get_standings(st.session_state['history'][s_active], engine.teams_list))
 
 # --- TAB 2 : CALENDRIER ---
 with tabs[1]:
     j_input = st.number_input("Journée", 1, 50, st.session_state['next_day'])
     f_cal = st.file_uploader("Scan Calendrier", type=['jpg','png','jpeg'])
-    # ... (Logique de scan identique au V22.0) ...
     if f_cal:
         res = reader.readtext(f_cal.read(), detail=0)
         t_f, o_f = [], []
@@ -169,19 +148,18 @@ with tabs[1]:
                 jk = f"Journée {j_input}"
                 if jk not in st.session_state['history'][s_active]: st.session_state['history'][s_active][jk] = {"cal":[], "res":[], "pro":[], "rank":[]}
                 st.session_state['history'][s_active][jk]["cal"] = final_c
+                # Calcul prono
                 st.session_state['history'][s_active][jk]["pro"] = [{"m": f"{m['h']} {int((3.0/m['o'][0])+0.4)}:{int((3.0/m['o'][2])+0.1)} {m['a']}", "c": m['o']} for m in final_c]
                 save_db(st.session_state['history']); st.session_state['ready_cal'] = final_c
-                custom_notify("Analyse fini et va vers le pronostic"); st.rerun()
+                custom_notify("Analyse terminée !"); st.rerun()
 
-# --- TAB 4 : RÉSULTATS (AVEC SNAPSHOT CLASSEMENT) ---
+# --- TAB 4 : RÉSULTATS ---
 with tabs[3]:
     j_res_input = st.number_input("Journée Résultats", 1, 50, st.session_state['next_day'])
     f_res = st.file_uploader("Scan Résultats", type=['jpg','png','jpeg'])
-    # ... (Logique de scan des résultats) ...
     if f_res:
         img = Image.open(f_res); w, hi = img.size; mid = w/2
-        raw = reader.readtext(f_res.getvalue(), detail=1)
-        raw.sort(key=lambda x: x[0][0][1])
+        raw = reader.readtext(f_res.getvalue(), detail=1); raw.sort(key=lambda x: x[0][0][1])
         tms = [t for t in [{"n": engine.clean_team(txt), "y": b[0][1], "x": (b[0][0]+b[1][0])/2} for (b, txt, p) in raw] if t["n"] and hi*0.12 < t["y"] < hi*0.95]
         ancs = []
         for t in tms:
@@ -211,30 +189,40 @@ with tabs[3]:
                 bh = st.text_input("Dom", r['hm'], key=f"sbh{i}"); ba = st.text_input("Ext", r['am'], key=f"sba{i}")
                 res_val_data.append({"h":r['h'], "a":r['a'], "s":fs, "mt":ms, "hm":bh, "am":ba})
             
-            if st.form_submit_button("✅ ENREGISTRER & CALCULER CLASSEMENT"):
+            if st.form_submit_button("✅ ENREGISTRER"):
                 jk = f"Journée {j_res_input}"
                 if jk not in st.session_state['history'][s_active]: st.session_state['history'][s_active][jk] = {"cal":[], "res":[], "pro":[], "rank":[]}
-                
-                # 1. Enregistrer les résultats
                 st.session_state['history'][s_active][jk]["res"] = res_val_data
-                
-                # 2. Générer le snapshot du classement immédiatement
+                # Snapshot classement avec RANG
                 df_snap = get_standings(st.session_state['history'][s_active], engine.teams_list)
                 st.session_state['history'][s_active][jk]["rank"] = df_snap.to_dict(orient='records')
-                
-                save_db(st.session_state['history'])
-                custom_notify("Enregistré ! Le classement de la journée a été archivé.")
-                st.rerun()
+                save_db(st.session_state['history']); custom_notify("Enregistré et Classé !"); st.rerun()
 
-# --- TAB 5 : HISTORIQUE (ARCHIVES PAR JOURNÉE) ---
+# --- TAB 5 : HISTORIQUE ---
 with tabs[4]:
-    for jk in sorted(st.session_state['history'][s_active].keys(), key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else 0):
+    sorted_days = sorted(st.session_state['history'][s_active].keys(), key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else 0)
+    for jk in sorted_days:
         with st.expander(f"📅 {jk}"):
             d = st.session_state['history'][s_active][jk]
-            h_tabs = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat", "📊 Classement de la J."])
-            with h_tabs[0]: st.table(d.get("cal", []))
+            h_tabs = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat", "📊 Classement"])
+            
+            with h_tabs[0]: 
+                if d.get("cal"):
+                    st.table(d["cal"])
+                    # --- BOUTON PRÉDIRE (SIMULATION) ---
+                    if st.button(f"🔮 Relancer la prédiction (Simulation)", key=f"pred_{jk}"):
+                        new_pros = []
+                        for m in d["cal"]:
+                            sh = int((3.0 / m['o'][0]) + 0.4)
+                            sa = int((3.0 / m['o'][2]) + 0.1)
+                            new_pros.append({"m": f"{m['h']} {sh}:{sa} {m['a']}", "c": m['o']})
+                        st.session_state['history'][s_active][jk]["pro"] = new_pros
+                        save_db(st.session_state['history'])
+                        st.success(f"Prédictions mises à jour pour la {jk} !")
+                        st.rerun()
+            
             with h_tabs[1]: st.table(d.get("pro", []))
             with h_tabs[2]: st.table(d.get("res", []))
             with h_tabs[3]: 
                 if d.get("rank"): st.table(pd.DataFrame(d["rank"]))
-                else: st.info("Aucun classement archivé pour cette journée.")
+                else: st.info("Pas de classement archivé.")
