@@ -7,9 +7,41 @@ import os
 from difflib import get_close_matches
 from PIL import Image
 
-st.set_page_config(page_title="Oracle V20.2 - Scan Restauré", layout="wide")
+# Configuration de la page
+st.set_page_config(page_title="Oracle Mahita", layout="wide")
 
-# --- STYLE NOTIFICATIONS NÉON VERT ---
+# --- STYLE CSS PERSONNALISÉ (En-tête et Notifications) ---
+st.markdown("""
+    <style>
+    .main-header {
+        text-align: center;
+        padding: 20px;
+        border: 4px solid #7FFFD4; /* Vert d'eau */
+        border-radius: 15px;
+        background-color: #0E1117;
+        box-shadow: 0px 0px 25px #7FFFD4;
+        margin-bottom: 10px;
+    }
+    .header-title {
+        color: #FFFFFF;
+        font-size: 3em;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 5px;
+        margin: 0;
+        -webkit-text-stroke: 1.5px #7FFFD4;
+        text-shadow: 0px 0px 10px #7FFFD4;
+    }
+    .season-display {
+        text-align: center;
+        color: #7FFFD4;
+        font-size: 1.5em;
+        font-weight: bold;
+        margin-top: 5px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 def custom_notify(text):
     msg = f"""
     <div style="
@@ -41,7 +73,30 @@ def save_db(data):
 
 if 'history' not in st.session_state:
     st.session_state['history'] = load_db()
+    if not st.session_state['history']:
+        st.session_state['history']["Saison 2026"] = {}
 
+# --- EN-TÊTE FIXE (TITRE & SAISON) ---
+st.markdown('<div class="main-header"><h1 class="header-title">Oracle Mahita</h1></div>', unsafe_allow_html=True)
+
+# Centrage de la sélection de saison
+col_left, col_mid, col_right = st.columns([1, 2, 1])
+with col_mid:
+    saisons_dispo = list(st.session_state['history'].keys())
+    # On cherche l'index de la saison active si elle existe déjà
+    current_idx = 0
+    if 's_active' in st.session_state and st.session_state['s_active'] in saisons_dispo:
+        current_idx = saisons_dispo.index(st.session_state['s_active'])
+    
+    selected_s = st.selectbox(
+        f"Saison active : {st.session_state.get('s_active', saisons_dispo[0])}", 
+        saisons_dispo, 
+        index=current_idx,
+        label_visibility="collapsed" # Cache le label pour le look épuré
+    )
+    st.session_state['s_active'] = selected_s
+
+# --- MOTEUR OCR ---
 @st.cache_resource
 def load_ocr():
     return easyocr.Reader(['en', 'fr'], gpu=False)
@@ -62,37 +117,11 @@ class OracleEngine:
 
 engine = OracleEngine()
 
-# --- INTERFACE ---
-st.title("🔮 ORACLE V20.2")
-
-tabs = st.tabs(["🌟 SAISONS & IMPORT/EXPORT", "📅 CALENDRIER", "🎯 PRONOS ACTUELS", "⚽ RÉSULTATS", "📚 HISTORIQUE"])
-
-# --- TAB 0 : SAISONS & GESTION ---
-with tabs[0]:
-    st.subheader("💾 Sauvegarde")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.session_state['history']:
-            json_data = json.dumps(st.session_state['history'], indent=4)
-            st.download_button("📥 EXPORTER JSON", data=json_data, file_name="oracle_backup.json")
-    with c2:
-        up = st.file_uploader("📤 IMPORTER JSON", type="json")
-        if up:
-            st.session_state['history'].update(json.load(up))
-            save_db(st.session_state['history']); st.success("Fusionné !")
-
-    st.divider()
-    if not st.session_state['history']: st.session_state['history']["Saison 2026"] = {}
-    ca, cb = st.columns(2)
-    with ca:
-        ns = st.text_input("Nom nouvelle saison")
-        if st.button("Créer"):
-            if ns: st.session_state['history'][ns] = {}; save_db(st.session_state['history']); st.rerun()
-    with cb:
-        st.session_state['s_active'] = st.selectbox("Saison de travail :", list(st.session_state['history'].keys()))
+# --- ONGLETS ---
+tabs = st.tabs(["📅 CALENDRIER", "🎯 PRONOS ACTUELS", "⚽ RÉSULTATS", "📚 HISTORIQUE", "⚙️ RÉGLAGES & IMPORT"])
 
 # --- TAB 1 : CALENDRIER ---
-with tabs[1]:
+with tabs[0]:
     j_num = st.number_input("Journée", 1, 50, 1, key="jcal")
     f_cal = st.file_uploader("📸 Scan Calendrier", type=['jpg','png','jpeg'])
     if f_cal:
@@ -127,21 +156,20 @@ with tabs[1]:
                 custom_notify("Analyse fini et va vers le pronostic")
 
 # --- TAB 2 : PRONOS ---
-with tabs[2]:
+with tabs[1]:
     if 'ready_cal' in st.session_state:
         for m in st.session_state['ready_cal']:
             sh, sa = int((3.0/m['o'][0])+0.4) if m['o'][0]>0 else 0, int((3.0/m['o'][2])+0.1) if m['o'][2]>0 else 0
             st.write(f"⚽ **{m['h']} {sh}:{sa} {m['a']}**")
 
-# --- TAB 3 : RÉSULTATS (MOTEUR V17.7 RESTAURÉ) ---
-with tabs[3]:
+# --- TAB 3 : RÉSULTATS ---
+with tabs[2]:
     j_res = st.number_input("Journée Résultat", 1, 50, 1, key="jres")
     f_res = st.file_uploader("📸 Scan Résultats", type=['jpg','png','jpeg'])
     if f_res:
         img = Image.open(f_res); w, hi = img.size; mid = w/2
         raw = reader.readtext(f_res.getvalue(), detail=1)
         raw.sort(key=lambda x: x[0][0][1])
-        # Filtrage et détection des ancres (équipes à gauche)
         tms = [t for t in [{"n": engine.clean_team(txt), "y": b[0][1], "x": (b[0][0]+b[1][0])/2} for (b, txt, p) in raw] if t["n"] and hi*0.12 < t["y"] < hi*0.95]
         ancs = []
         for t in tms:
@@ -171,12 +199,10 @@ with tabs[3]:
                 c1, c2 = st.columns(2)
                 fs = c1.text_input("Score Final", r['s'], key=f"rs{i}")
                 ms = c2.text_input("Score MT", r['mt'], key=f"rm{i}")
-                b1, b2 = st.columns(2)
-                bh = b1.text_input("Buteurs Domicile", r['hm'], key=f"rbh{i}")
-                ba = b2.text_input("Buteurs Extérieur", r['am'], key=f"rba{i}")
+                bh = st.text_input("Buteurs Dom", r['hm'], key=f"rbh{i}")
+                ba = st.text_input("Buteurs Ext", r['am'], key=f"rba{i}")
                 final_res_data.append({"h":r['h'], "a":r['a'], "s":fs, "mt":ms, "hm":bh, "am":ba})
-            
-            if st.form_submit_button("✅ ENREGISTRER DANS L'HISTORIQUE"):
+            if st.form_submit_button("✅ ENREGISTRER"):
                 sn, jk = st.session_state['s_active'], f"Journée {j_res}"
                 if jk not in st.session_state['history'][sn]: st.session_state['history'][sn][jk] = {"cal":[], "res":[], "pro":[]}
                 st.session_state['history'][sn][jk]["res"] = final_res_data
@@ -184,19 +210,31 @@ with tabs[3]:
                 custom_notify("c'est enregistré dans l'historique")
 
 # --- TAB 4 : HISTORIQUE ---
+with tabs[3]:
+    s_sel = st.selectbox("Voir Saison", list(st.session_state['history'].keys()))
+    for jk in list(st.session_state['history'][s_sel].keys()):
+        with st.expander(f"📅 {jk}"):
+            stabs = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat"])
+            d = st.session_state['history'][s_sel][jk]
+            with stabs[0]: 
+                if d.get("cal"): st.table(d["cal"])
+            with stabs[1]:
+                if d.get("pro"): st.table(d["pro"])
+            with stabs[2]:
+                if d.get("res"): st.table(d["res"])
+
+# --- TAB 5 : RÉGLAGES & IMPORT ---
 with tabs[4]:
-    if not st.session_state['history']: st.info("Vide.")
-    else:
-        s_sel = st.selectbox("Saison", list(st.session_state['history'].keys()))
-        for jk in list(st.session_state['history'][s_sel].keys()):
-            with st.expander(f"📅 {jk}"):
-                if st.button("🗑️ Supprimer", key=f"del_{jk}"):
-                    del st.session_state['history'][s_sel][jk]; save_db(st.session_state['history']); st.rerun()
-                stabs = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat"])
-                d = st.session_state['history'][s_sel][jk]
-                with stabs[0]: 
-                    if d.get("cal"): st.table(d["cal"])
-                with stabs[1]:
-                    if d.get("pro"): st.table(d["pro"])
-                with stabs[2]:
-                    if d.get("res"): st.table(d["res"])
+    st.subheader("⚙️ Configuration")
+    nc1, nc2 = st.columns(2)
+    with nc1:
+        ns = st.text_input("Nom nouvelle saison")
+        if st.button("Créer Saison"):
+            if ns: st.session_state['history'][ns] = {}; save_db(st.session_state['history']); st.rerun()
+    with nc2:
+        up = st.file_uploader("📥 Importer BDD JSON", type="json")
+        if up:
+            st.session_state['history'].update(json.load(up))
+            save_db(st.session_state['history']); st.rerun()
+    if st.session_state['history']:
+        st.download_button("📤 Exporter BDD JSON", data=json.dumps(st.session_state['history'], indent=4), file_name="oracle_export.json")
