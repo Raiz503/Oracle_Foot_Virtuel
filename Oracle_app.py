@@ -6,28 +6,18 @@ import json
 import os
 from difflib import get_close_matches
 from PIL import Image
-import base64
 
-st.set_page_config(page_title="Oracle V20.1 - Ultra Stable", layout="wide")
+st.set_page_config(page_title="Oracle V20.2 - Scan Restauré", layout="wide")
 
 # --- STYLE NOTIFICATIONS NÉON VERT ---
 def custom_notify(text):
-    # Effet de bordure lumineuse sur chaque mot via un contour prononcé
     msg = f"""
     <div style="
-        padding: 15px;
-        border: 3px solid #00FF00;
-        border-radius: 10px;
-        background-color: #0E1117;
-        color: #FFFFFF;
-        text-align: center;
-        font-weight: 900;
-        box-shadow: 0px 0px 20px #00FF00;
-        margin: 20px 0px;
-        font-size: 1.2em;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        -webkit-text-stroke: 1px #00FF00; /* Bordure verte sur les lettres */
+        padding: 15px; border: 3px solid #00FF00; border-radius: 10px;
+        background-color: #0E1117; color: #FFFFFF; text-align: center;
+        font-weight: 900; box-shadow: 0px 0px 20px #00FF00; margin: 20px 0px;
+        font-size: 1.2em; text-transform: uppercase;
+        -webkit-text-stroke: 1px #00FF00;
     ">
         {text}
     </div>
@@ -72,44 +62,38 @@ class OracleEngine:
 
 engine = OracleEngine()
 
-# --- INTERFACE PRINCIPALE ---
-st.title("🔮 ORACLE V20.1")
+# --- INTERFACE ---
+st.title("🔮 ORACLE V20.2")
 
 tabs = st.tabs(["🌟 SAISONS & IMPORT/EXPORT", "📅 CALENDRIER", "🎯 PRONOS ACTUELS", "⚽ RÉSULTATS", "📚 HISTORIQUE"])
 
-# --- TAB 0 : SAISONS & SAUVEGARDES ---
+# --- TAB 0 : SAISONS & GESTION ---
 with tabs[0]:
-    st.subheader("💾 Sauvegarde et Migration")
+    st.subheader("💾 Sauvegarde")
     c1, c2 = st.columns(2)
     with c1:
         if st.session_state['history']:
             json_data = json.dumps(st.session_state['history'], indent=4)
-            st.download_button("📥 EXPORTER TOUTE LA BDD (JSON)", data=json_data, file_name="oracle_full_backup.json", mime="application/json")
+            st.download_button("📥 EXPORTER JSON", data=json_data, file_name="oracle_backup.json")
     with c2:
-        up = st.file_uploader("📤 IMPORTER UN FICHIER JSON", type="json")
+        up = st.file_uploader("📤 IMPORTER JSON", type="json")
         if up:
-            try:
-                imported = json.load(up)
-                st.session_state['history'].update(imported)
-                save_db(st.session_state['history'])
-                st.success("Données fusionnées avec succès !")
-            except: st.error("Fichier invalide.")
+            st.session_state['history'].update(json.load(up))
+            save_db(st.session_state['history']); st.success("Fusionné !")
 
     st.divider()
-    s_list = list(st.session_state['history'].keys()) if st.session_state['history'] else ["Saison 2026"]
     if not st.session_state['history']: st.session_state['history']["Saison 2026"] = {}
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
+    ca, cb = st.columns(2)
+    with ca:
         ns = st.text_input("Nom nouvelle saison")
-        if st.button("Créer Saison"):
+        if st.button("Créer"):
             if ns: st.session_state['history'][ns] = {}; save_db(st.session_state['history']); st.rerun()
-    with col_b:
+    with cb:
         st.session_state['s_active'] = st.selectbox("Saison de travail :", list(st.session_state['history'].keys()))
 
 # --- TAB 1 : CALENDRIER ---
 with tabs[1]:
-    j_num = st.number_input("Journée", 1, 50, 1)
+    j_num = st.number_input("Journée", 1, 50, 1, key="jcal")
     f_cal = st.file_uploader("📸 Scan Calendrier", type=['jpg','png','jpeg'])
     if f_cal:
         res = reader.readtext(f_cal.read(), detail=0)
@@ -133,92 +117,86 @@ with tabs[1]:
                 th = c1.selectbox(f"H{i}", engine.teams_list, index=engine.teams_list.index(m['h']) if m['h'] in engine.teams_list else 0)
                 ta = c2.selectbox(f"A{i}", engine.teams_list, index=engine.teams_list.index(m['a']) if m['a'] in engine.teams_list else 0)
                 final_c.append({'h':th, 'a':ta, 'o':[o1.number_input("C1",value=m['o'][0],key=f"oc1{i}"), ox.number_input("CX",value=m['o'][1],key=f"ocx{i}"), o2.number_input("C2",value=m['o'][2],key=f"oc2{i}")]})
-            
             if st.form_submit_button("🔥 VALIDER"):
                 sn, jk = st.session_state['s_active'], f"Journée {j_num}"
                 if jk not in st.session_state['history'][sn]: st.session_state['history'][sn][jk] = {"cal":[], "res":[], "pro":[]}
                 st.session_state['history'][sn][jk]["cal"] = final_c
-                
-                # Enregistre le prono à ce moment précis
-                p_list = []
-                for m in final_c:
-                    sh, sa = int((3.0/m['o'][0])+0.4) if m['o'][0]>0 else 0, int((3.0/m['o'][2])+0.1) if m['o'][2]>0 else 0
-                    p_list.append({"m": f"{m['h']} {sh}:{sa} {m['a']}", "c": m['o']})
+                p_list = [{"m": f"{m['h']} {int((3.0/m['o'][0])+0.4)}:{int((3.0/m['o'][2])+0.1)} {m['a']}", "c": m['o']} for m in final_c]
                 st.session_state['history'][sn][jk]["pro"] = p_list
-                
-                save_db(st.session_state['history'])
-                st.session_state['ready_cal'] = final_c
+                save_db(st.session_state['history']); st.session_state['ready_cal'] = final_c
                 custom_notify("Analyse fini et va vers le pronostic")
 
-# --- TAB 2 : PRONOS ACTUELS ---
+# --- TAB 2 : PRONOS ---
 with tabs[2]:
     if 'ready_cal' in st.session_state:
         for m in st.session_state['ready_cal']:
             sh, sa = int((3.0/m['o'][0])+0.4) if m['o'][0]>0 else 0, int((3.0/m['o'][2])+0.1) if m['o'][2]>0 else 0
             st.write(f"⚽ **{m['h']} {sh}:{sa} {m['a']}**")
 
-# --- TAB 3 : RÉSULTATS ---
+# --- TAB 3 : RÉSULTATS (MOTEUR V17.7 RESTAURÉ) ---
 with tabs[3]:
-    j_res = st.number_input("Journée Résultat", 1, 50, 1)
+    j_res = st.number_input("Journée Résultat", 1, 50, 1, key="jres")
     f_res = st.file_uploader("📸 Scan Résultats", type=['jpg','png','jpeg'])
     if f_res:
-        # Code de scan optimisé V17.7...
-        st.warning("Prêt pour la validation manuelle...")
-        # Simulé pour l'exemple :
-        res_matches = [{"h":"Leeds", "a":"Brighton", "s":"2:2", "mt":"1:1", "hm":"24' 82'", "am":"41' 64'"}]
+        img = Image.open(f_res); w, hi = img.size; mid = w/2
+        raw = reader.readtext(f_res.getvalue(), detail=1)
+        raw.sort(key=lambda x: x[0][0][1])
+        # Filtrage et détection des ancres (équipes à gauche)
+        tms = [t for t in [{"n": engine.clean_team(txt), "y": b[0][1], "x": (b[0][0]+b[1][0])/2} for (b, txt, p) in raw] if t["n"] and hi*0.12 < t["y"] < hi*0.95]
+        ancs = []
+        for t in tms:
+            if t["x"] < mid and (not ancs or abs(t["y"] - ancs[-1]["y"]) > 45): ancs.append(t)
+        
+        extracted_matches = []
+        for i, a in enumerate(ancs):
+            if len(extracted_matches) >= 10: break
+            ys, ye = a["y"]-15, (ancs[i+1]["y"]-15 if i+1 < len(ancs) else hi*0.98)
+            inf = {"h": a["n"], "a": "Inconnu", "s": "0:0", "hm": "", "am": "", "mt": ""}
+            for (bb, tx, p) in raw:
+                cy, cx = (bb[0][1]+bb[2][1])/2, (bb[0][0]+bb[1][0])/2
+                if ys <= cy <= ye:
+                    tn = engine.clean_team(tx)
+                    if tn and cx > mid and tn != inf["h"]: inf["a"] = tn
+                    elif re.search(r"^\d[:\-]\d$", tx.strip()) and "MT" not in tx.upper(): inf["s"] = tx
+                    elif "MT" in tx.upper(): inf["mt"] = tx
+                    elif re.search(r"\d+", tx) and not re.search(r"^\d[:\-]\d$", tx):
+                        if cx < mid: inf["hm"] += f" {tx}'"
+                        else: inf["am"] += f" {tx}'"
+            if inf["a"] != "Inconnu": extracted_matches.append(inf)
         
         with st.form("res_val_form"):
-            val_r = []
-            for i, r in enumerate(res_matches):
+            final_res_data = []
+            for i, r in enumerate(extracted_matches):
                 st.markdown(f"**{r['h']} vs {r['a']}**")
                 c1, c2 = st.columns(2)
-                fs = c1.text_input("Final", r['s'], key=f"rs{i}")
-                ms = c2.text_input("MT", r['mt'], key=f"rm{i}")
+                fs = c1.text_input("Score Final", r['s'], key=f"rs{i}")
+                ms = c2.text_input("Score MT", r['mt'], key=f"rm{i}")
                 b1, b2 = st.columns(2)
-                bh = b1.text_input("Buts Dom", r['hm'], key=f"rbh{i}")
-                ba = b2.text_input("Buts Ext", r['am'], key=f"rba{i}")
-                val_r.append({"h":r['h'], "a":r['a'], "s":fs, "mt":ms, "hm":bh, "am":ba})
+                bh = b1.text_input("Buteurs Domicile", r['hm'], key=f"rbh{i}")
+                ba = b2.text_input("Buteurs Extérieur", r['am'], key=f"rba{i}")
+                final_res_data.append({"h":r['h'], "a":r['a'], "s":fs, "mt":ms, "hm":bh, "am":ba})
             
-            if st.form_submit_button("✅ ENREGISTRER"):
+            if st.form_submit_button("✅ ENREGISTRER DANS L'HISTORIQUE"):
                 sn, jk = st.session_state['s_active'], f"Journée {j_res}"
                 if jk not in st.session_state['history'][sn]: st.session_state['history'][sn][jk] = {"cal":[], "res":[], "pro":[]}
-                st.session_state['history'][sn][jk]["res"] = val_r
+                st.session_state['history'][sn][jk]["res"] = final_res_data
                 save_db(st.session_state['history'])
                 custom_notify("c'est enregistré dans l'historique")
 
-# --- TAB 4 : HISTORIQUE (SÉCURISÉ) ---
+# --- TAB 4 : HISTORIQUE ---
 with tabs[4]:
-    st.header("📚 Archives de l'Oracle")
     if not st.session_state['history']: st.info("Vide.")
     else:
-        s_sel = st.selectbox("Choisir Saison", list(st.session_state['history'].keys()))
+        s_sel = st.selectbox("Saison", list(st.session_state['history'].keys()))
         for jk in list(st.session_state['history'][s_sel].keys()):
             with st.expander(f"📅 {jk}"):
-                c1, c2 = st.columns([5, 1])
-                with c2:
-                    if st.button("🗑️", key=f"del_{jk}"):
-                        del st.session_state['history'][s_sel][jk]; save_db(st.session_state['history']); st.rerun()
-                
-                # SOUS-ONGLETS AU MÊME NIVEAU
-                s_cal, s_pro, s_res = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat"])
-                
-                day_data = st.session_state['history'][s_sel][jk]
-                
-                with s_cal:
-                    # Utilisation de .get() pour éviter le message rouge si la clé n'existe pas
-                    cal_list = day_data.get("cal", [])
-                    if cal_list:
-                        st.table(pd.DataFrame([{"Match": f"{m['h']} vs {m['a']}", "1": m['o'][0], "X": m['o'][1], "2": m['o'][2]} for m in cal_list]))
-                    else: st.write("Aucun calendrier.")
-
-                with s_pro:
-                    pro_list = day_data.get("pro", [])
-                    if pro_list:
-                        st.table(pd.DataFrame([{"Analyse": p['m'], "Cotes": p['c']} for p in pro_list]))
-                    else: st.write("Aucun pronomstic enregistré pour cette journée.")
-
-                with s_res:
-                    res_list = day_data.get("res", [])
-                    if res_list:
-                        st.table(pd.DataFrame([{"M": f"{m['h']} vs {m['a']}", "Score": m['s'], "MT": m['mt'], "Buteurs": f"{m['hm']} | {m['am']}"} for m in res_list]))
-                    else: st.write("Aucun résultat.")
+                if st.button("🗑️ Supprimer", key=f"del_{jk}"):
+                    del st.session_state['history'][s_sel][jk]; save_db(st.session_state['history']); st.rerun()
+                stabs = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat"])
+                d = st.session_state['history'][s_sel][jk]
+                with stabs[0]: 
+                    if d.get("cal"): st.table(d["cal"])
+                with stabs[1]:
+                    if d.get("pro"): st.table(d["pro"])
+                with stabs[2]:
+                    if d.get("res"): st.table(d["res"])
