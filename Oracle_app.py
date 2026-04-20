@@ -8,17 +8,21 @@ from difflib import get_close_matches
 from PIL import Image
 
 # --- CONFIGURATION & DESIGN (V28) ---
-st.set_page_config(page_title="Oracle Mahita - Fusion Expert", layout="wide")
+st.set_page_config(page_title="Oracle Mahita - Fusion Complète", layout="wide")
 
 st.markdown("""
     <style>
     .main-header { text-align: center; padding: 20px; border: 4px solid #7FFFD4; border-radius: 15px; background-color: #0E1117; box-shadow: 0px 0px 25px #7FFFD4; margin-bottom: 10px; }
     .header-title { color: #FFFFFF; font-size: 3.5em; font-weight: 900; text-transform: uppercase; -webkit-text-stroke: 1.5px #7FFFD4; }
     .img-container { border: 3px solid #7FFFD4; border-radius: 15px; padding: 10px; background: #1E1E1E; margin-bottom: 25px; text-align: center; }
+    /* Styles pour les Pronostics (MAP) */
+    .prono-safe { border-left: 5px solid #00FF00; padding: 10px; background: rgba(0, 255, 0, 0.1); margin-bottom: 10px; border-radius: 5px; }
+    .prono-risque { border-left: 5px solid #FFA500; padding: 10px; background: rgba(255, 165, 0, 0.1); margin-bottom: 10px; border-radius: 5px; }
+    .prono-fun { border-left: 5px solid #FF4B4B; padding: 10px; background: rgba(255, 75, 75, 0.1); margin-bottom: 10px; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- PERSISTENCE (V28/V19) ---
+# --- PERSISTENCE ---
 DB_FILE = "oracle_history.json"
 
 def load_history():
@@ -57,7 +61,7 @@ class OracleEngine:
 
 engine = OracleEngine()
 
-# --- HEADER & GESTION SAISON ---
+# --- HEADER ---
 st.markdown('<div class="main-header"><h1 class="header-title">Oracle Mahita</h1></div>', unsafe_allow_html=True)
 
 saisons_existantes = list(st.session_state['history'].keys())
@@ -70,23 +74,26 @@ if 'saison_active' not in st.session_state:
 
 tabs = st.tabs(["⚙️ GESTION", "📅 CALENDRIER", "🎯 PRONOS & TICKETS", "⚽ RÉSULTATS", "📚 HISTORIQUE"])
 
-# --- TAB 0 : GESTION (V19/V28 Mix) ---
+# --- TAB 0 : GESTION ---
 with tabs[0]:
     col_a, col_b = st.columns(2)
     with col_a:
-        new_s_name = st.text_input("Nom de la nouvelle saison")
-        if st.button("➕ Créer la saison"):
+        st.subheader("➕ Nouvelle Saison")
+        new_s_name = st.text_input("Nom de la saison (ex: Saison 2027)")
+        if st.button("Créer la saison"):
             if new_s_name and new_s_name not in st.session_state['history']:
                 st.session_state['history'][new_s_name] = {}
                 save_history(st.session_state['history'])
+                st.success(f"Saison {new_s_name} créée !")
                 st.rerun()
     with col_b:
-        st.session_state['saison_active'] = st.selectbox("Saison Active", saisons_existantes, index=saisons_existantes.index(st.session_state['saison_active']))
+        st.subheader("🔄 Sélection")
+        st.session_state['saison_active'] = st.selectbox("Saison pour les scans :", saisons_existantes, index=saisons_existantes.index(st.session_state['saison_active']))
     
     st.divider()
-    st.download_button("📤 Exporter Backup (JSON)", json.dumps(st.session_state['history'], indent=4), "oracle_backup.json")
+    st.download_button("📤 Exporter Sauvegarde (JSON)", json.dumps(st.session_state['history'], indent=4), "oracle_full_backup.json")
 
-# --- TAB 1 : CALENDRIER (MOTEUR V19) ---
+# --- TAB 1 : CALENDRIER (MOTEUR V19 - INCHANGÉ) ---
 with tabs[1]:
     j_num = st.number_input("Numéro de la Journée", 1, 50, 1, key="j_cal")
     file_cal = st.file_uploader("📸 Scan Calendrier", type=['jpg','png','jpeg'])
@@ -131,47 +138,52 @@ with tabs[1]:
                 st.session_state['current_ready'] = validated
                 st.toast("Analyse finie et va vers le pronostic", icon="📈")
 
-# --- TAB 2 : PRONOS & TICKETS (CONTENU V19) ---
+# --- TAB 2 : PRONOS & TICKETS (DESIGN RÉINTÉGRÉ) ---
 with tabs[2]:
     if 'current_ready' in st.session_state:
         safe_d, risque_d, fun_d = [], [], []
         for m in st.session_state['current_ready']:
-            # Calcul score probable (Logique V19)
             sh = int((3.0/m['o'][0])+0.4) if m['o'][0]>0 else 0
             sa = int((3.0/m['o'][2])+0.1) if m['o'][2]>0 else 0
             score_txt = f"{sh} : {sa}"
             
             st.write(f"⚽ **{m['h']} {score_txt} {m['a']}**")
             
-            # Répartition des tickets (Logique V19)
-            if m['o'][0] < 1.7: safe_d.append({"txt": f"{m['h']} Gagne", "cote": m['o'][0]})
-            elif m['o'][2] < 1.7: safe_d.append({"txt": f"{m['a']} Gagne", "cote": m['o'][2]})
+            if m['o'][0] < 1.7: safe_d.append({"txt": f"{m['h']} Gagne", "cote": m['o'][0], "match": f"{m['h']} {score_txt} {m['a']}"})
+            elif m['o'][2] < 1.7: safe_d.append({"txt": f"{m['a']} Gagne", "cote": m['o'][2], "match": f"{m['h']} {score_txt} {m['a']}"})
             
-            if 1.7 <= m['o'][0] <= 3.0: risque_d.append({"txt": f"{m['h']} {score_txt}", "cote": m['o'][0]})
-            elif 1.7 <= m['o'][2] <= 3.0: risque_d.append({"txt": f"{m['a']} {score_txt}", "cote": m['o'][2]})
+            if 1.7 <= m['o'][0] <= 3.0: risque_d.append({"txt": f"{m['h']} ({score_txt})", "cote": m['o'][0], "match": f"{m['h']} vs {m['a']}"})
+            elif 1.7 <= m['o'][2] <= 3.0: risque_d.append({"txt": f"{m['a']} ({score_txt})", "cote": m['o'][2], "match": f"{m['h']} vs {m['a']}"})
             
-            if m['o'][1] > 3.4: fun_d.append({"txt": f"{m['h']} vs {m['a']} (Nul)", "cote": m['o'][1]})
+            if m['o'][1] > 3.4: fun_d.append({"txt": "Match Nul", "cote": m['o'][1], "match": f"{m['h']} vs {m['a']}"})
         
         st.divider()
         c1, c2, c3 = st.columns(3)
-        def show_ticket(col, title, color, data):
+        
+        def show_ticket_with_style(col, title, css_class, data):
             with col:
                 st.markdown(f"### {title}")
-                if not data: st.write("Aucun prono détecté."); return
-                tot = 1.0; calc = ""
-                for i, x in enumerate(data[:3]):
-                    st.success(f"{x['txt']} : **{x['cote']}**")
-                    tot *= x['cote']
-                    calc += str(x['cote']) + (" x " if i < len(data[:3])-1 else "")
-                st.info(f"Total: {round(tot,2)}")
+                if not data: 
+                    st.write("Pas de match.")
+                    return
+                
+                total_cote = 1.0
+                calc_string = ""
+                
+                for i, x in enumerate(data[:3]): # Limite à 3 matchs par ticket
+                    st.markdown(f"""<div class="{css_class}"><b>{x['match']}</b><br>{x['txt']} : <b>{x['cote']}</b></div>""", unsafe_allow_html=True)
+                    total_cote *= x['cote']
+                    calc_string += str(x['cote']) + (" x " if i < len(data[:3])-1 else "")
+                
+                st.info(f"🧮 {calc_string} = **{round(total_cote, 2)}**")
 
-        show_ticket(c1, "🟢 SAFE", "green", safe_d)
-        show_ticket(c2, "🟡 RISQUE", "orange", risque_d)
-        show_ticket(c3, "🔴 FUN", "red", fun_d)
+        show_ticket_with_style(c1, "🟢 TICKET SAFE", "prono-safe", safe_d)
+        show_ticket_with_style(c2, "🟡 TICKET RISQUE", "prono-risque", risque_d)
+        show_ticket_with_style(c3, "🔴 TICKET FUN", "prono-fun", fun_d)
     else:
-        st.info("Validez un calendrier pour voir les pronostics.")
+        st.info("Veuillez d'abord valider un calendrier.")
 
-# --- TAB 3 : RÉSULTATS (MOTEUR V19 EFFICACE) ---
+# --- TAB 3 : RÉSULTATS (MOTEUR V19 - INCHANGÉ) ---
 with tabs[3]:
     j_res_n = st.number_input("Résultats pour la Journée", 1, 50, 1, key="j_res")
     file_res = st.file_uploader("📸 Scan Résultats", type=['jpg','png','jpeg'])
@@ -222,7 +234,7 @@ with tabs[3]:
                 save_history(st.session_state['history'])
                 st.toast("C'est enregistré dans l'historique", icon="💾")
 
-# --- TAB 4 : HISTORIQUE (SAUVEGARDE ET SUPPRESSION V28) ---
+# --- TAB 4 : HISTORIQUE (BOUTON PRÉDIRE RÉINTÉGRÉ) ---
 with tabs[4]:
     st.subheader("📚 Archives Oracle")
     s_view = st.selectbox("Saison à consulter", list(st.session_state['history'].keys()))
@@ -232,18 +244,26 @@ with tabs[4]:
             with st.expander(f"📅 {jk}"):
                 data = st.session_state['history'][s_view][jk]
                 
-                col_del, col_space = st.columns([1, 4])
-                if col_del.button(f"🗑️ Supprimer {jk}", key=f"del_{jk}"):
+                col_btn1, col_btn2, col_space = st.columns([1.5, 1.5, 3])
+                
+                # RÉINTÉGRATION : Bouton de relance des pronostics
+                if col_btn1.button(f"🔮 Prédire (Relancer)", key=f"sim_{jk}"):
+                    if data.get("cal"):
+                        st.session_state['current_ready'] = data["cal"]
+                        st.toast(f"Pronostics de la {jk} chargés !")
+                        # On ne fait pas de rerun ici pour laisser l'utilisateur aller à l'onglet Prono
+                
+                if col_btn2.button(f"🗑️ Supprimer", key=f"del_{jk}"):
                     del st.session_state['history'][s_view][jk]
                     save_history(st.session_state['history'])
                     st.rerun()
                 
                 c_cal, c_res = st.columns(2)
                 with c_cal:
-                    st.markdown("**📋 Calendrier**")
+                    st.markdown("**📋 Calendrier enregistré**")
                     if data.get("cal"):
                         st.table(pd.DataFrame([{"Match": f"{m['h']} vs {m['a']}", "Cotes": f"{m['o'][0]} | {m['o'][1]} | {m['o'][2]}"} for m in data["cal"]]))
                 with c_res:
-                    st.markdown("**⚽ Résultats**")
+                    st.markdown("**⚽ Résultats enregistrés**")
                     if data.get("res"):
                         st.table(pd.DataFrame([{"Match": f"{m['h']} vs {m['a']}", "Score": m['s'], "MT": m['mt']} for m in data["res"]]))
