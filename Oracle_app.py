@@ -32,6 +32,13 @@ st.markdown("""
         -webkit-text-stroke: 1.5px #7FFFD4;
         text-shadow: 0px 0px 10px #7FFFD4;
     }
+    .version-text {
+        color: #7FFFD4;
+        font-size: 0.85em;
+        font-style: italic;
+        margin-top: -5px;
+        opacity: 0.8;
+    }
     .info-center {
         text-align: center;
         color: #7FFFD4;
@@ -91,7 +98,12 @@ if 'history' not in st.session_state:
     if not st.session_state['history']: st.session_state['history']["Saison 2026"] = {}
 
 # --- EN-TÊTE MAHITA ---
-st.markdown('<div class="main-header"><h1 class="header-title">Oracle Mahita</h1></div>', unsafe_allow_html=True)
+st.markdown('''
+<div class="main-header">
+    <h1 class="header-title">Oracle Mahita</h1>
+    <div class="version-text">Version V28.0</div>
+</div>
+''', unsafe_allow_html=True)
 
 c_left, c_mid, c_right = st.columns([1, 1, 1])
 with c_mid:
@@ -143,9 +155,12 @@ with tabs[0]:
 with tabs[1]:
     j_input = st.number_input("Journée", 1, 50, st.session_state['next_day'])
     f_cal = st.file_uploader("Scan Calendrier", type=['jpg','png','jpeg'])
-    # ... (Logique de scan identique au V22.0) ...
+    
     if f_cal:
-        res = reader.readtext(f_cal.read(), detail=0)
+        # Affichage en grand du capture
+        st.image(f_cal, caption="Aperçu Grand Format (Calendrier)", use_container_width=True)
+        
+        res = reader.readtext(f_cal.getvalue(), detail=0)
         t_f, o_f = [], []
         for t in res:
             n = engine.clean_team(t); 
@@ -177,9 +192,13 @@ with tabs[1]:
 with tabs[3]:
     j_res_input = st.number_input("Journée Résultats", 1, 50, st.session_state['next_day'])
     f_res = st.file_uploader("Scan Résultats", type=['jpg','png','jpeg'])
-    # ... (Logique de scan des résultats) ...
+    
     if f_res:
-        img = Image.open(f_res); w, hi = img.size; mid = w/2
+        img = Image.open(f_res)
+        # Affichage en grand du capture
+        st.image(img, caption="Aperçu Grand Format (Résultats)", use_container_width=True)
+        
+        w, hi = img.size; mid = w/2
         raw = reader.readtext(f_res.getvalue(), detail=1)
         raw.sort(key=lambda x: x[0][0][1])
         tms = [t for t in [{"n": engine.clean_team(txt), "y": b[0][1], "x": (b[0][0]+b[1][0])/2} for (b, txt, p) in raw] if t["n"] and hi*0.12 < t["y"] < hi*0.95]
@@ -231,10 +250,28 @@ with tabs[4]:
     for jk in sorted(st.session_state['history'][s_active].keys(), key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else 0):
         with st.expander(f"📅 {jk}"):
             d = st.session_state['history'][s_active][jk]
-            h_tabs = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat", "📊 Classement de la J."])
-            with h_tabs[0]: st.table(d.get("cal", []))
+            # Ajout du sous-onglet "Actions" pour la suppression
+            h_tabs = st.tabs(["📋 Calendrier", "🎯 Pronostic", "⚽ Résultat", "📊 Classement de la J.", "⚙️ Actions"])
+            
+            with h_tabs[0]: 
+                st.table(d.get("cal", []))
+                # Ajout du bouton "Prédire" en bas du calendrier
+                if d.get("cal") and st.button(f"🔮 Prédire (Relancer)", key=f"sim_{jk}"):
+                    d["pro"] = [{"m": f"{m['h']} {int((3.0/m['o'][0])+0.4)}:{int((3.0/m['o'][2])+0.1)} {m['a']}", "c": m['o']} for m in d["cal"]]
+                    save_db(st.session_state['history'])
+                    st.success("Pronostics mis à jour avec succès !")
+                    st.rerun()
+                    
             with h_tabs[1]: st.table(d.get("pro", []))
             with h_tabs[2]: st.table(d.get("res", []))
             with h_tabs[3]: 
                 if d.get("rank"): st.table(pd.DataFrame(d["rank"]))
                 else: st.info("Aucun classement archivé pour cette journée.")
+                
+            with h_tabs[4]:
+                st.warning("Zone de suppression de données")
+                # Bouton de suppression de mauvaise données
+                if st.button(f"🗑️ Supprimer définitivement la {jk}", key=f"del_{jk}"):
+                    del st.session_state['history'][s_active][jk]
+                    save_db(st.session_state['history'])
+                    st.rerun()
