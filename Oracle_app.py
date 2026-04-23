@@ -13,7 +13,7 @@ from moteur_IA import CerveauOracle  # On appelle notre nouveau cerveau
 oracle_brain = CerveauOracle()
 
 # Configuration
-st.set_page_config(page_title="Oracle Mahita", layout="wide")
+st.set_page_config(page_title="Oracle Mahita V30", layout="wide")
 
 # --- STYLE CSS : ORACLE MAHITA & NOTIFICATIONS ---
 st.markdown("""
