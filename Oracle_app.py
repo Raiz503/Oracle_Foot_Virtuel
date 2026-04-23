@@ -7,6 +7,10 @@ import os
 from difflib import get_close_matches
 from PIL import Image
 import numpy as np
+from moteur_IA import CerveauOracle  # On appelle notre nouveau cerveau
+
+# Initialiser le cerveau
+oracle_brain = CerveauOracle()
 
 # Configuration
 st.set_page_config(page_title="Oracle Mahita", layout="wide")
