@@ -102,47 +102,67 @@ class CerveauOracle:
       }
 
     def calculer_performance_globale(self, historique_saison):
-        """
-        Analyse l'historique pour mesurer l'efficacité de l'Oracle.
-        """
-        stats = {"total_matchs": 0, "reussite_1n2": 0, "scores_exacts": 0, "erreur_totale_buts": 0}
+    """
+    MOTEUR DE RATING FUSIONNÉ :
+    Analyse la précision mathématique + Système de points Oracle.
+    """
+    stats = {
+        "total_matchs": 0, 
+        "reussite_1n2": 0, 
+        "scores_exacts": 0, 
+        "erreur_totale_buts": 0,
+        "points_oracle": 0  # Ajout du système de points
+    }
+    
+    for jk, data in historique_saison.items():
+        res_list = data.get("res", [])
+        pro_list = data.get("pro", [])
         
-        for jk, data in historique_saison.items():
-            res_list = data.get("res", [])
-            pro_list = data.get("pro", []) # Nos anciennes prédictions
-            
-            if not res_list or not pro_list:
-                continue
+        if not res_list or not pro_list:
+            continue
 
-            for r, p in zip(res_list, pro_list):
-                stats["total_matchs"] += 1
+        for r, p in zip(res_list, pro_list):
+            stats["total_matchs"] += 1
+            try:
+                # 1. Extraction stable des scores (Réel vs Prédit)
+                s_r_h, s_r_a = map(int, r['s'].replace('-', ':').split(':'))
+                score_pro_txt = re.search(r"(\d+):(\d+)", p['m'])
+                if not score_pro_txt: continue
+                s_p_h, s_p_a = map(int, score_pro_txt.groups())
+
+                # 2. Vérification Score Exact (Bonus 3 points)
+                if s_r_h == s_p_h and s_r_a == s_p_a:
+                    stats["scores_exacts"] += 1
+                    stats["points_oracle"] += 3
                 
-                # 1. Extraction des scores réels et prédits
-                try:
-                    s_r_h, s_r_a = map(int, r['s'].replace('-', ':').split(':'))
-                    # On extrait le score du texte de la prédiction "Equipe 2:1 Equipe"
-                    score_pro_txt = re.search(r"(\d+):(\d+)", p['m'])
-                    s_p_h, s_p_a = map(int, score_pro_txt.groups())
-
-                    # 2. Vérification Score Exact
-                    if s_r_h == s_p_h and s_r_a == s_p_a:
-                        stats["scores_exacts"] += 1
+                # 3. Vérification Tendance 1N2 (Bonus 1 point)
+                tend_r = "H" if s_r_h > s_r_a else "A" if s_r_a > s_r_h else "N"
+                tend_p = "H" if s_p_h > s_p_a else "A" if s_p_a > s_p_h else "N"
+                
+                if tend_r == tend_p:
+                    stats["reussite_1n2"] += 1
+                    stats["points_oracle"] += 1
                     
-                    # 3. Vérification 1N2 (Réussite de la tendance)
-                    tendance_reelle = "H" if s_r_h > s_r_a else "A" if s_r_a > s_r_h else "N"
-                    tendance_pro = "H" if s_p_h > s_p_a else "A" if s_p_a > s_p_h else "N"
-                    
-                    if tendance_reelle == tendance_pro:
-                        stats["reussite_1n2"] += 1
-                        
-                    # 4. Calcul de l'erreur (Distance)
-                    stats["erreur_totale_buts"] += abs(s_r_h - s_p_h) + abs(s_r_a - s_p_a)
-                except:
-                    continue
+                # 4. Calcul de l'erreur (Distance pour le Rating)
+                stats["erreur_totale_buts"] += abs(s_r_h - s_p_h) + abs(s_r_a - s_p_a)
+            except:
+                continue
+    
+    # --- CALCUL DES RATIOS FINAUX POUR LE DASHBOARD ---
+    if stats["total_matchs"] > 0:
+        total = stats["total_matchs"]
+        stats["taux_1n2"] = (stats["reussite_1n2"] / total) * 100
+        stats["taux_exact"] = (stats["scores_exacts"] / total) * 100
         
-        # Calcul des pourcentages
-        if stats["total_matchs"] > 0:
-            stats["rating_general"] = (stats["reussite_1n2"] / stats["total_matchs"]) * 100
-            stats["precision_buts"] = 100 - (stats["erreur_totale_buts"] / (stats["total_matchs"] * 2) * 10) # Note sur 100
+        # Rating sur 100 (Précision mathématique)
+        stats["rating_general"] = max(0, 100 - (stats["erreur_totale_buts"] / total * 10))
         
-        return stats
+        # Moyenne de points par match
+        stats["moyenne_points"] = stats["points_oracle"] / total
+    else:
+        stats["taux_1n2"] = 0
+        stats["taux_exact"] = 0
+        stats["rating_general"] = 0
+        stats["moyenne_points"] = 0
+        
+    return stats
