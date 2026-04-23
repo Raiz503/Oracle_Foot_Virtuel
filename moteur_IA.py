@@ -100,3 +100,49 @@ class CerveauOracle:
             "alertes": alertes,
             "probs_ajustees": {"1": round(prob_1_ajustee, 1), "X": round(prob_x_ajustee, 1), "2": round(prob_2_ajustee, 1)}
       }
+
+    def calculer_performance_globale(self, historique_saison):
+        """
+        Analyse l'historique pour mesurer l'efficacité de l'Oracle.
+        """
+        stats = {"total_matchs": 0, "reussite_1n2": 0, "scores_exacts": 0, "erreur_totale_buts": 0}
+        
+        for jk, data in historique_saison.items():
+            res_list = data.get("res", [])
+            pro_list = data.get("pro", []) # Nos anciennes prédictions
+            
+            if not res_list or not pro_list:
+                continue
+
+            for r, p in zip(res_list, pro_list):
+                stats["total_matchs"] += 1
+                
+                # 1. Extraction des scores réels et prédits
+                try:
+                    s_r_h, s_r_a = map(int, r['s'].replace('-', ':').split(':'))
+                    # On extrait le score du texte de la prédiction "Equipe 2:1 Equipe"
+                    score_pro_txt = re.search(r"(\d+):(\d+)", p['m'])
+                    s_p_h, s_p_a = map(int, score_pro_txt.groups())
+
+                    # 2. Vérification Score Exact
+                    if s_r_h == s_p_h and s_r_a == s_p_a:
+                        stats["scores_exacts"] += 1
+                    
+                    # 3. Vérification 1N2 (Réussite de la tendance)
+                    tendance_reelle = "H" if s_r_h > s_r_a else "A" if s_r_a > s_r_h else "N"
+                    tendance_pro = "H" if s_p_h > s_p_a else "A" if s_p_a > s_p_h else "N"
+                    
+                    if tendance_reelle == tendance_pro:
+                        stats["reussite_1n2"] += 1
+                        
+                    # 4. Calcul de l'erreur (Distance)
+                    stats["erreur_totale_buts"] += abs(s_r_h - s_p_h) + abs(s_r_a - s_p_a)
+                except:
+                    continue
+        
+        # Calcul des pourcentages
+        if stats["total_matchs"] > 0:
+            stats["rating_general"] = (stats["reussite_1n2"] / stats["total_matchs"]) * 100
+            stats["precision_buts"] = 100 - (stats["erreur_totale_buts"] / (stats["total_matchs"] * 2) * 10) # Note sur 100
+        
+        return stats
