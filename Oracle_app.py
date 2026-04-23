@@ -17,7 +17,7 @@ st.markdown("""
     .main-header {
         text-align: center;
         padding: 25px;
-        border: 5px solid #7FFFD4; /* Vert d'eau */
+        border: 5px solid #7FFFD4;
         border-radius: 20px;
         background-color: #0E1117;
         box-shadow: 0px 0px 30px #7FFFD4;
@@ -33,10 +33,13 @@ st.markdown("""
         -webkit-text-stroke: 1.5px #7FFFD4;
         text-shadow: 0px 0px 15px #7FFFD4;
     }
-    /* Style pour la sélection de saison centrée */
-    .stSelectbox div[data-baseweb="select"] {
-        border-color: #7FFFD4 !important;
-    }
+    /* Styles pour les Pronostics (Tickets) */
+    .prono-safe { border-left: 5px solid #00FF00; padding: 10px; background: rgba(0, 255, 0, 0.1); margin-bottom: 10px; border-radius: 5px; }
+    .prono-risque { border-left: 5px solid #FFA500; padding: 10px; background: rgba(255, 165, 0, 0.1); margin-bottom: 10px; border-radius: 5px; }
+    .prono-fun { border-left: 5px solid #FF4B4B; padding: 10px; background: rgba(255, 75, 75, 0.1); margin-bottom: 10px; border-radius: 5px; }
+    
+    .stSelectbox div[data-baseweb="select"] { border-color: #7FFFD4 !important; }
+    .next-day-box { text-align: center; color: #7FFFD4; font-weight: bold; font-size: 1.2em; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -121,13 +124,14 @@ with col_m:
     st.markdown(f'<div class="next-day-box">PROCHAINE ÉTAPE : J-{next_j}</div>', unsafe_allow_html=True)
 
 # --- NAVIGATION ---
-tabs = st.tabs(["🏆 CLASSEMENT", "📅 CALENDRIER", "🎯 PRONOS", "⚽ RÉSULTATS", "📚 HISTORIQUE", "⚙️"])
+# Définition de 6 onglets (Index 0 à 5)
+tabs = st.tabs(["🏆 CLASSEMENT", "📅 CALENDRIER", "🎯 PRONOS", "⚽ RÉSULTATS", "📚 HISTORIQUE", "⚙️ GESTION"])
 
-# --- TAB 1 : CLASSEMENT ---
+# --- TAB 0 : CLASSEMENT ---
 with tabs[0]:
     st.table(get_standings(st.session_state['history'][s_active], engine.teams_list))
 
-# --- TAB 2 : CALENDRIER (AVEC APERÇU) ---
+# --- TAB 1 : CALENDRIER ---
 with tabs[1]:
     j_cal = st.number_input("Journée", 1, 50, next_j)
     f_cal = st.file_uploader("📸 Sélectionner le Calendrier", type=['jpg','png','jpeg'], key="up_cal")
@@ -169,10 +173,11 @@ with tabs[1]:
                 st.session_state['history'][s_active][jk]["cal"] = final_c
                 st.session_state['history'][s_active][jk]["pro"] = [{"m": f"{m['h']} {int((3.0/max(0.1, m['o'][0]))+0.4)}:{int((3.0/max(0.1, m['o'][2]))+0.1)} {m['a']}", "c": m['o']} for m in final_c]
                 save_db(st.session_state['history'])
-                st.session_state['ready_cal'] = final_c
+                # Correction : On utilise 'current_ready' pour que l'onglet PRONOS le reconnaisse
+                st.session_state['current_ready'] = final_c 
                 custom_notify("Analyse terminée et enregistrée !")
 
-# --- TAB 2 : PRONOS & TICKETS (DESIGN RÉINTÉGRÉ) ---
+# --- TAB 2 : PRONOS & TICKETS ---
 with tabs[2]:
     if 'current_ready' in st.session_state:
         safe_d, risque_d, fun_d = [], [], []
@@ -200,15 +205,12 @@ with tabs[2]:
                 if not data: 
                     st.write("Pas de match.")
                     return
-                
                 total_cote = 1.0
                 calc_string = ""
-                
-                for i, x in enumerate(data[:3]): # Limite à 3 matchs par ticket
+                for i, x in enumerate(data[:3]):
                     st.markdown(f"""<div class="{css_class}"><b>{x['match']}</b><br>{x['txt']} : <b>{x['cote']}</b></div>""", unsafe_allow_html=True)
                     total_cote *= x['cote']
                     calc_string += str(x['cote']) + (" x " if i < len(data[:3])-1 else "")
-                
                 st.info(f"🧮 {calc_string} = **{round(total_cote, 2)}**")
 
         show_ticket_with_style(c1, "🟢 TICKET SAFE", "prono-safe", safe_d)
@@ -217,7 +219,7 @@ with tabs[2]:
     else:
         st.info("Veuillez d'abord valider un calendrier.")
 
-# --- TAB 4 : RÉSULTATS (AVEC APERÇU) ---
+# --- TAB 3 : RÉSULTATS ---
 with tabs[3]:
     j_res = st.number_input("Journée Résultat", 1, 50, next_j)
     f_res = st.file_uploader("📸 Sélectionner les Résultats", type=['jpg','png','jpeg'], key="up_res")
@@ -271,7 +273,7 @@ with tabs[3]:
                 save_db(st.session_state['history'])
                 custom_notify("Résultats et classement enregistrés !")
 
-# --- HISTORIQUE & AUTRES --- (Identique V23.0)
+# --- TAB 4 : HISTORIQUE ---
 with tabs[4]:
     sorted_j = sorted(st.session_state['history'][s_active].keys(), key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else 0)
     for jk in sorted_j:
@@ -281,28 +283,35 @@ with tabs[4]:
             with h_tabs[0]: 
                 st.table(d.get("cal", []))
                 if d.get("cal") and st.button(f"🔮 Prédire", key=f"sim_{jk}"):
-                    d["pro"] = [{"m": f"{m['h']} {int((3.0/max(0.1, m['o'][0]))+0.4)}:{int((3.0/max(0.1, m['o'][2]))+0.1)} {m['a']}", "c": m['o']} for m in d["cal"]]
-                    save_db(st.session_state['history']); st.rerun()
+                    st.session_state['current_ready'] = d["cal"]
+                    st.rerun()
             with h_tabs[1]: st.table(d.get("pro", []))
             with h_tabs[2]: st.table(d.get("res", []))
             with h_tabs[3]: 
                 if d.get("rank"): st.table(pd.DataFrame(d["rank"]))
 
+# --- TAB 5 : GESTION (FUSIONNÉ) ---
 with tabs[5]:
-    ns = st.text_input("Nouvelle Saison")
-    if st.button("Créer"): 
-        if ns: st.session_state['history'][ns] = {}; save_db(st.session_state['history']); st.rerun()
- # --- TAB 5 : SAISONS & GESTION ---
-with tabs[6]:
-    st.subheader("💾 Sauvegarde")
+    st.subheader("📁 Gestion des Saisons")
+    ns = st.text_input("Nom de la nouvelle Saison")
+    if st.button("➕ Créer la Saison"): 
+        if ns: 
+            st.session_state['history'][ns] = {}
+            save_db(st.session_state['history'])
+            st.success(f"Saison {ns} créée !")
+            st.rerun()
+
+    st.divider()
+    st.subheader("💾 Sauvegarde & Import")
     c1, c2 = st.columns(2)
     with c1:
         if st.session_state['history']:
             json_data = json.dumps(st.session_state['history'], indent=4)
-            st.download_button("📥 EXPORTER JSON", data=json_data, file_name="oracle_backup.json")
+            st.download_button("📥 EXPORTER JSON (Backup)", data=json_data, file_name="oracle_backup.json")
     with c2:
         up = st.file_uploader("📤 IMPORTER JSON", type="json")
         if up:
-            st.session_state['history'].update(json.load(up))
-            save_db(st.session_state['history']); st.success("Fusionné !")
-
+            data_imported = json.load(up)
+            st.session_state['history'].update(data_imported)
+            save_db(st.session_state['history'])
+            st.success("Données fusionnées avec succès !")
