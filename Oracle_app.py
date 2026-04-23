@@ -129,7 +129,7 @@ with col_m:
 
 # --- NAVIGATION ---
 # Définition de 6 onglets (Index 0 à 5)
-tabs = st.tabs(["🏆 CLASSEMENT", "📅 CALENDRIER", "🎯 PRONOS", "⚽ RÉSULTATS", "📚 HISTORIQUE", "⚙️ GESTION"])
+tabs = st.tabs(["🏆 CLASSEMENT", "📅 CALENDRIER", "🎯 PRONOS", "⚽ RÉSULTATS", "📚 HISTORIQUE", "⚙️ GESTION", "📊 PERFORMANCE & RATING"])
 
 # --- TAB 0 : CLASSEMENT ---
 with tabs[0]:
@@ -321,7 +321,6 @@ with tabs[5]:
             st.success("Données fusionnées avec succès !")
             
 # --- NOUVEL ONGLET : 📊 PERFORMANCE & RATING ---
-# Note : Ajustez l'index de tabs[...] selon votre structure (ex: tabs[5])
 with tabs[6]:
     st.markdown("<div class='main-header'><h1 class='header-title'>📊 RATING & PERFORMANCE</h1></div>", unsafe_allow_html=True)
     
