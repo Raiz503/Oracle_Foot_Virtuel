@@ -319,3 +319,60 @@ with tabs[5]:
             st.session_state['history'].update(data_imported)
             save_db(st.session_state['history'])
             st.success("Données fusionnées avec succès !")
+            
+# --- NOUVEL ONGLET : 📊 PERFORMANCE & RATING ---
+# Note : Ajustez l'index de tabs[...] selon votre structure (ex: tabs[5])
+with tabs[6]:
+    st.markdown("<div class='main-header'><h1 class='header-title'>📊 RATING & PERFORMANCE</h1></div>", unsafe_allow_html=True)
+    
+    # Récupération des statistiques via le moteur fusionné
+    # s_active est le nom de la saison sélectionnée dans votre app
+    stats_perf = oracle_brain.calculer_performance_globale(st.session_state['history'][s_active])
+    
+    if stats_perf["total_matchs"] == 0:
+        st.info("ℹ️ L'Oracle a besoin de résultats enregistrés pour calculer son rating. Allez dans l'onglet '⚽ RÉSULTATS' pour commencer.")
+    else:
+        # --- LIGNE 1 : LES MÉTRIQUES CLÉS ---
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Matchs", stats_perf["total_matchs"])
+        with col2:
+            # On affiche le taux de réussite 1N2
+            st.metric("Réussite 1N2", f"{stats_perf['taux_1n2']:.1f}%")
+        with col3:
+            # On affiche le nombre de scores exacts trouvés
+            st.metric("Scores Exacts", stats_perf["scores_exacts"], help="Nombre de fois où le score final était identique à la prédiction.")
+        with col4:
+            # La moyenne de points par match (Système Oracle)
+            st.metric("Points / Match", f"{stats_perf['moyenne_points']:.2f}")
+
+        st.markdown("---")
+
+        # --- LIGNE 2 : LE SCORE DE PRÉCISION (RATING) ---
+        c_left, c_right = st.columns([2, 1])
+        
+        with c_left:
+            st.subheader("🎯 Indice de Précision Mathématique")
+            rating = stats_perf["rating_general"]
+            
+            # Affichage d'une barre de progression colorée
+            if rating >= 80: color = "green"
+            elif rating >= 50: color = "orange"
+            else: color = "red"
+            
+            st.progress(rating / 100)
+            st.markdown(f"**Score Global : <span style='color:{color}; font-size:25px;'>{rating:.1f} / 100</span>**", unsafe_allow_html=True)
+            st.caption("Cet indice calcule la distance entre vos prédictions et les scores réels. Plus il est proche de 100, plus l'IA est 'chirurgicale'.")
+
+        with c_right:
+            st.subheader("💡 Analyse IA")
+            if rating >= 75:
+                st.success("L'Oracle est actuellement très précis. Les stratégies du Cerveau 1 sont bien calibrées pour cette saison.")
+            elif rating >= 50:
+                st.warning("Précision moyenne. L'IA suggère d'affiner les 'Conditions de Cotes' dans le Cerveau 2.")
+            else:
+                st.error("Précision faible. Attention aux surprises (MSS) ou au relâchement des favoris non détectés.")
+
+        # --- LIGNE 3 : RÉCAPITULATIF DES POINTS ---
+        st.info(f"🏆 **Points Totaux Oracle : {stats_perf['points_oracle']} pts** (Calculés sur : 3pts/Score Exact + 1pt/Bonne Tendance)")
