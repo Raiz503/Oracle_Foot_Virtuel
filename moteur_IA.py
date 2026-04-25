@@ -18,33 +18,34 @@ class CerveauOracle:
 
     def analyser_match(self, equipe_dom, equipe_ext, cotes, journee, serie_dom, serie_ext, rang_dom, rang_ext):
         """
-        TRANSCRIPTION INTÉGRALE DU PLAYBOOK - VERSION CORRIGÉE
+        TRANSCRIPTION INTÉGRALE DU PLAYBOOK - VERSION SÉCURISÉE
         """
-        # SÉCURITÉ : On force les séries en texte pour éviter l'erreur Indentation/Attribute
-        s_dom = str(serie_dom) if serie_dom != 0 else ""
-        s_ext = str(serie_ext) if serie_ext != 0 else ""
+        # --- SÉCURITÉ ANTI-CRASH (Conversion en texte propre) ---
+        s_dom = str(serie_dom).upper().strip() if (serie_dom and serie_dom != 0) else ""
+        s_ext = str(serie_ext).upper().strip() if (serie_ext and serie_ext != 0) else ""
 
         # --- MODULE 1 : TRAJECTOIRE 6 (Momentum) ---
         momentum_dom = self._calculer_momentum(s_dom)
         momentum_ext = self._calculer_momentum(s_ext)
         
         # --- MODULE 3 : FATIGUE & PLAFOND DE VERRE ---
-        # Si 3 victoires consécutives, risque de chute (-12% d'efficacité)
-        plafond_dom = 0.88 if "V V V" in s_dom else 1.0
-        plafond_ext = 0.88 if "V V V" in s_ext else 1.0
+        # Si 3 victoires consécutives (VVV), malus de -12%
+        plafond_dom = 0.88 if "VVV" in s_dom.replace(" ", "") else 1.0
+        plafond_ext = 0.88 if "VVV" in s_ext.replace(" ", "") else 1.0
 
         # --- MODULE 2.A : LOI DU RELÂCHEMENT (Post-Sommet) ---
-        # Si le dernier match était une victoire contre un "Big Four", -7% d'efficacité
-        relachement_dom = 0.93 if (s_dom.endswith("V") and any(b in s_dom for b in self.big_four)) else 1.0
-        relachement_ext = 0.93 if (s_ext.endswith("V") and any(b in s_ext for b in self.big_four)) else 1.0
+        # Malus de -7% si le dernier match était une victoire contre un "Big Four"
+        rel_dom = 0.93 if (s_dom.endswith("V") and any(b.upper() in s_dom for b in self.big_four)) else 1.0
+        rel_ext = 0.93 if (s_ext.endswith("V") and any(b.upper() in s_ext for b in self.big_four)) else 1.0
 
-        # Calcul de la force offensive (Cerveau 1 + Modules)
-        force_dom = (3.0 / cotes[0]) * momentum_dom * plafond_dom * relachement_dom
-        force_ext = (3.0 / cotes[2]) * momentum_ext * plafond_ext * relachement_ext
+        # --- CALCUL DE LA FORCE OFFENSIVE (Indice Oracle) ---
+        force_dom = (3.0 / cotes[0]) * momentum_dom * plafond_dom * rel_dom
+        force_ext = (3.0 / cotes[2]) * momentum_ext * plafond_ext * rel_ext
         
-        # --- ADN DES ÉQUIPES ---
+        # --- ADN DES ÉQUIPES (Profils Spécifiques) ---
         force_dom, force_ext = self._appliquer_adn(equipe_dom, equipe_ext, force_dom, force_ext, rang_dom, rang_ext)
 
+        # Transformation en scores probables
         score_dom = int(force_dom + 0.4)
         score_ext = int(force_ext + 0.1)
         
@@ -52,11 +53,11 @@ class CerveauOracle:
         confiance = "MEDIUM"
         
         # --- MODULE 2.B : MSS (Loi de Survie Critique) ---
-        if journee > 30:
-            if rang_dom >= 17 and cotes[0] > 2.2:
+        if journee >= 30:
+            if rang_dom >= 17 and cotes[0] > 2.0:
                 alertes.append(f"⚠️ MSS : {equipe_dom} joue sa survie !")
                 confiance = "RISQUE"
-            if rang_ext >= 17 and cotes[2] > 2.2:
+            if rang_ext >= 17 and cotes[2] > 2.0:
                 alertes.append(f"⚠️ MSS : {equipe_ext} joue sa survie !")
                 confiance = "RISQUE"
 
@@ -78,26 +79,29 @@ class CerveauOracle:
         }
 
     def _calculer_momentum(self, serie):
-        if not serie or len(serie) < 2: return 1.0
-        # Nettoyage pour ne garder que les lettres
+        """Module 1 : Forme sur les 2 derniers matchs (+15% / -15%)"""
         clean = serie.replace(" ", "")
+        if len(clean) < 2: return 1.0
         derniers = clean[-2:] 
         if derniers == "VV": return 1.15
         if derniers == "DD": return 0.85
         return 1.0
 
     def _appliquer_adn(self, h, a, f_h, f_a, r_h, r_a):
-        # Loi du 'Giant Killer' (Brentford)
-        if self.profils.get(h) == "GIANT_KILLER" and a in self.big_four:
-            f_h *= 1.12 
-        # Loi 'Lanterne' (Sunderland)
+        """Module ADN : Brentford Giant Killer / Sunderland Lanterne"""
+        # Loi du 'Giant Killer'
+        if self.profils.get(h) == "GIANT_KILLER" and any(b in a for b in self.big_four):
+            f_h *= 1.15 
+        # Loi 'Lanterne'
         if self.profils.get(a) == "LANTERNE" and r_h < 10:
-            f_a *= 0.85
+            f_a *= 0.80
         return f_h, f_a
 
     def calculer_performance_globale(self, historique_saison):
+        """Rating de précision millimétré"""
         stats = {"total": 0, "1n2": 0, "exacts": 0, "pts": 0}
         if not historique_saison: return self._vident()
+
         for jk, data in historique_saison.items():
             res, pro = data.get("res", []), data.get("pro", [])
             for r, p in zip(res, pro):
@@ -109,17 +113,20 @@ class CerveauOracle:
                     s_p_h, s_p_a = map(int, m.groups())
                     if s_r_h == s_p_h and s_r_a == s_p_a:
                         stats["exacts"] += 1 ; stats["pts"] += 3
-                    if (s_r_h > s_r_a and s_p_h > s_p_a) or (s_r_a > s_r_h and s_p_a > s_p_h) or (s_r_h == s_r_a and s_p_h == s_p_a):
+                    tend_r = 1 if s_r_h > s_r_a else 2 if s_r_a > s_r_h else 0
+                    tend_p = 1 if s_p_h > s_p_a else 2 if s_p_a > s_p_h else 0
+                    if tend_r == tend_p:
                         stats["1n2"] += 1 ; stats["pts"] += 1
                 except: continue
-        total = stats["total"] or 1
+
+        t = stats["total"] or 1
         return {
             "total_matchs": stats["total"],
-            "taux_1n2": (stats["1n2"] / total) * 100,
+            "taux_1n2": (stats["1n2"] / t) * 100,
             "scores_exacts": stats["exacts"],
             "points_oracle": stats["pts"],
-            "moyenne_points": stats["pts"] / total,
-            "rating_general": min(100, (stats["pts"] / (total * 3)) * 100)
+            "moyenne_points": stats["pts"] / t,
+            "rating_general": min(100, (stats["pts"] / (t * 3)) * 100)
         }
 
     def _vident(self):
