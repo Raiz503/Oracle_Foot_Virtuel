@@ -2,104 +2,119 @@ import re
 
 class CerveauOracle:
     def __init__(self):
-        # Configuration des seuils (Cerveau 2)
+        # --- CONFIGURATION CERVEAU 2 (FINANCIER) ---
+        self.seuil_value = 1.05  # Avantage minimum de 5% sur le bookmaker
         self.seuil_safe = 1.70
         self.seuil_fun = 3.40
         
-        # ADN des Équipes (Module 3 & 4 du Playbook)
+        # --- CONFIGURATION CERVEAU 1 (ADN & PLAYBOOK) ---
+        # Profils identifiés dans le Playbook [cite: 19, 20]
         self.profils = {
             "London Reds": "VERTICAL", "Manchester Blue": "VERTICAL",
-            "Liverpool": "EXPLOSIF",
-            "Brentford": "GIANT_KILLER",
-            "Everton": "LINEAIRE", "A. Villa": "LINEAIRE",
-            "Sunderland": "LANTERNE"
+            "Liverpool": "EXPLOSIF", "Brentford": "GIANT_KILLER",
+            "Everton": "LINEAIRE", "A. Villa": "LINEAIRE", "Sunderland": "LANTERNE"
         }
         self.big_four = ["London Reds", "Manchester Blue", "Liverpool", "London Blues"]
 
     def analyser_match(self, equipe_dom, equipe_ext, cotes, journee, serie_dom, serie_ext, rang_dom, rang_ext):
         """
-        TRANSCRIPTION INTÉGRALE DU PLAYBOOK - VERSION SÉCURISÉE
+        FUSION C1 & C2 : Analyse les lois du sport pour en extraire une opportunité financière.
         """
-        # --- SÉCURITÉ ANTI-CRASH (Conversion en texte propre) ---
+        # --- SÉCURITÉ ANTI-CRASH ---
+        # Convertit les entrées (comme le 0 du bug) en texte exploitable
         s_dom = str(serie_dom).upper().strip() if (serie_dom and serie_dom != 0) else ""
         s_ext = str(serie_ext).upper().strip() if (serie_ext and serie_ext != 0) else ""
 
-        # --- MODULE 1 : TRAJECTOIRE 6 (Momentum) ---
-        momentum_dom = self._calculer_momentum(s_dom)
-        momentum_ext = self._calculer_momentum(s_ext)
+        # --- MODULE 1 : TRAJECTOIRE (MOMENTUM) [cite: 6] ---
+        mom_dom = self._calculer_momentum(s_dom)
+        mom_ext = self._calculer_momentum(s_ext)
         
-        # --- MODULE 3 : FATIGUE & PLAFOND DE VERRE ---
-        # Si 3 victoires consécutives (VVV), malus de -12%
-        plafond_dom = 0.88 if "VVV" in s_dom.replace(" ", "") else 1.0
-        plafond_ext = 0.88 if "VVV" in s_ext.replace(" ", "") else 1.0
+        # --- MODULE 3 : FATIGUE & PLAFOND DE VERRE [cite: 15, 16] ---
+        # Malus de -12% après 3 victoires consécutives (VVV)
+        plaf_dom = 0.88 if "VVV" in s_dom.replace(" ", "") else 1.0
+        plaf_ext = 0.88 if "VVV" in s_ext.replace(" ", "") else 1.0
 
-        # --- MODULE 2.A : LOI DU RELÂCHEMENT (Post-Sommet) ---
-        # Malus de -7% si le dernier match était une victoire contre un "Big Four"
+        # --- MODULE 2.A : LOI DU RELÂCHEMENT [cite: 8, 9] ---
+        # Malus de -7% post-sommet contre un Big Four
         rel_dom = 0.93 if (s_dom.endswith("V") and any(b.upper() in s_dom for b in self.big_four)) else 1.0
         rel_ext = 0.93 if (s_ext.endswith("V") and any(b.upper() in s_ext for b in self.big_four)) else 1.0
 
-        # --- CALCUL DE LA FORCE OFFENSIVE (Indice Oracle) ---
-        force_dom = (3.0 / cotes[0]) * momentum_dom * plafond_dom * rel_dom
-        force_ext = (3.0 / cotes[2]) * momentum_ext * plafond_ext * rel_ext
+        # --- CALCUL DE LA FORCE BRUTE (Cerveau 1) ---
+        force_dom = (3.0 / cotes[0]) * mom_dom * plaf_dom * rel_dom
+        force_ext = (3.0 / cotes[2]) * mom_ext * plaf_ext * rel_ext
         
-        # --- ADN DES ÉQUIPES (Profils Spécifiques) ---
+        # Application de l'ADN des équipes [cite: 21, 23, 25]
         force_dom, force_ext = self._appliquer_adn(equipe_dom, equipe_ext, force_dom, force_ext, rang_dom, rang_ext)
 
-        # Transformation en scores probables
-        score_dom = int(force_dom + 0.4)
-        score_ext = int(force_ext + 0.1)
-        
+        # --- CERVEAU 2 : CALCUL DE LA VALUE & PROBABILITÉ ---
+        # Probabilité estimée (p) vs Cote Bookmaker
+        prob_oracle = min(0.95, (force_dom / (force_dom + force_ext + 0.5)))
+        indice_value = prob_oracle * cotes[0] # Indice de rentabilité
+
         alertes = []
-        confiance = "MEDIUM"
-        
-        # --- MODULE 2.B : MSS (Loi de Survie Critique) ---
-        if journee >= 30:
-            if rang_dom >= 17 and cotes[0] > 2.0:
-                alertes.append(f"⚠️ MSS : {equipe_dom} joue sa survie !")
-                confiance = "RISQUE"
-            if rang_ext >= 17 and cotes[2] > 2.0:
-                alertes.append(f"⚠️ MSS : {equipe_ext} joue sa survie !")
-                confiance = "RISQUE"
+        # MODULE 2.B : MSS (Survie Critique) [cite: 11, 12]
+        if journee >= 30 and (rang_dom >= 17 or rang_ext >= 17):
+            alertes.append("⚠️ MSS : Enjeu de Survie")
 
-        # --- MODULE 4 : DÉCISION (Indice de Value) ---
-        choix = f"Nul ou {equipe_dom}" if cotes[0] < cotes[2] else f"Nul ou {equipe_ext}"
+        # --- DÉCISION FINALE ---
+        score_txt = f"{int(force_dom + 0.4)}:{int(force_ext + 0.1)}"
+        confiance = self._definir_confiance(prob_oracle, indice_value)
         
-        if cotes[0] < self.seuil_safe or cotes[2] < self.seuil_safe:
-            confiance = "BANKER (80-95%)"
-            choix = f"{equipe_dom} Gagne" if cotes[0] < cotes[2] else f"{equipe_ext} Gagne"
-        elif cotes[1] > self.seuil_fun:
-            confiance = "FUN (TICKET)"
-            choix = "Match Nul"
-
         return {
-            "score_predit": f"{score_dom}:{score_ext}",
-            "alertes": alertes,
+            "match": f"{equipe_dom} vs {equipe_ext}",
+            "score_predit": score_txt,
+            "probabilite": round(prob_oracle * 100, 1),
+            "value": round(indice_value, 2),
             "confiance": confiance,
-            "choix_expert": choix
+            "alertes": alertes,
+            "cotes": cotes
         }
 
+    def preparer_tickets(self, analyses_journee):
+        """
+        CERVEAU 2 ARCHITECTE : Trie les matchs par profil de risque[cite: 31, 32, 34].
+        """
+        tickets = {"BANKER": [], "EXPLOSIF": [], "FUN": []}
+
+        for a in analyses_journee:
+            # Banker : Haute probabilité + Cote sécurisée [cite: 32]
+            if a['probabilite'] > 75 and a['cotes'][0] < 1.80:
+                tickets["BANKER"].append(a)
+            # Explosif : Cherche la Value (erreur bookmaker) [cite: 6]
+            elif a['value'] > self.seuil_value:
+                tickets["EXPLOSIF"].append(a)
+            # Fun : Grosses cotes ou Alertes MSS [cite: 34]
+            elif a['cotes'][1] > self.seuil_fun or a['alertes']:
+                tickets["FUN"].append(a)
+
+        return tickets
+
     def _calculer_momentum(self, serie):
-        """Module 1 : Forme sur les 2 derniers matchs (+15% / -15%)"""
+        """Module 1 : Bonus/Malus de forme (±15%) [cite: 6]"""
         clean = serie.replace(" ", "")
         if len(clean) < 2: return 1.0
-        derniers = clean[-2:] 
-        if derniers == "VV": return 1.15
-        if derniers == "DD": return 0.85
+        if clean[-2:] == "VV": return 1.15
+        if clean[-2:] == "DD": return 0.85
         return 1.0
 
     def _appliquer_adn(self, h, a, f_h, f_a, r_h, r_a):
-        """Module ADN : Brentford Giant Killer / Sunderland Lanterne"""
-        # Loi du 'Giant Killer'
+        """Lois ADN : Giant Killer et Lanterne """
         if self.profils.get(h) == "GIANT_KILLER" and any(b in a for b in self.big_four):
-            f_h *= 1.15 
-        # Loi 'Lanterne'
+            f_h *= 1.15 # Bonus domicile Giant Killer
         if self.profils.get(a) == "LANTERNE" and r_h < 10:
-            f_a *= 0.80
+            f_a *= 0.80 # Malus extérieur Lanterne
         return f_h, f_a
 
+    def _definir_confiance(self, prob, value):
+        """Définit le type de mise selon l'avantage calculé [cite: 31]"""
+        if prob > 0.80: return "BANKER"
+        if value > 1.10: return "VALUE BET"
+        if prob < 0.55: return "FUN / RISQUE"
+        return "MEDIUM"
+
     def calculer_performance_globale(self, historique_saison):
-        """Rating de précision millimétré"""
-        stats = {"total": 0, "1n2": 0, "exacts": 0, "pts": 0}
+        """Mesure l'efficacité réelle (Points & Précision)"""
+        stats = {"total": 0, "1n2": 0, "exacts": 0, "pts": 0, "erreur_buts": 0}
         if not historique_saison: return self._vident()
 
         for jk, data in historique_saison.items():
@@ -111,23 +126,26 @@ class CerveauOracle:
                     m = re.search(r"(\d+):(\d+)", p['m'])
                     if not m: continue
                     s_p_h, s_p_a = map(int, m.groups())
+                    
+                    # Points : 3pts score exact, 1pt tendance
                     if s_r_h == s_p_h and s_r_a == s_p_a:
                         stats["exacts"] += 1 ; stats["pts"] += 3
+                    
                     tend_r = 1 if s_r_h > s_r_a else 2 if s_r_a > s_r_h else 0
                     tend_p = 1 if s_p_h > s_p_a else 2 if s_p_a > s_p_h else 0
                     if tend_r == tend_p:
                         stats["1n2"] += 1 ; stats["pts"] += 1
+                    
+                    stats["erreur_buts"] += abs(s_r_h - s_p_h) + abs(s_r_a - s_p_a)
                 except: continue
 
         t = stats["total"] or 1
         return {
             "total_matchs": stats["total"],
-            "taux_1n2": (stats["1n2"] / t) * 100,
-            "scores_exacts": stats["exacts"],
-            "points_oracle": stats["pts"],
-            "moyenne_points": stats["pts"] / t,
-            "rating_general": min(100, (stats["pts"] / (t * 3)) * 100)
+            "taux_1n2": round((stats["1n2"] / t) * 100, 1),
+            "rating_precision": round(max(0, 100 - (stats["erreur_buts"] / t * 10)), 1),
+            "points_oracle": stats["pts"]
         }
 
     def _vident(self):
-        return {"total_matchs":0, "taux_1n2":0, "scores_exacts":0, "points_oracle":0, "moyenne_points":0, "rating_general":0}
+        return {"total_matchs":0, "taux_1n2":0, "rating_precision":0, "points_oracle":0}
