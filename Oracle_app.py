@@ -216,19 +216,23 @@ with tabs[2]:
     else:
         st.info("Veuillez d'abord valider un calendrier.")
 
-# --- TAB 3 : RÉSULTATS ---
+# --- TAB 3 : RÉSULTATS (MOTEUR V17.7 RESTAURÉ) ---
 with tabs[3]:
-    j_res = st.number_input("Journée Résultat", 1, 50, next_j)
-    f_res = st.file_uploader("📸 Sélectionner les Résultats", type=['jpg','png','jpeg'], key="up_res")
+    j_res = st.number_input("Journée Résultat", 1, 50, 1, key="jres")
+    f_res = st.file_uploader("📸 Scan Résultats", type=['jpg','png','jpeg'])
     if f_res:
         img = Image.open(f_res); w, hi = img.size; mid = w/2
-        raw = reader.readtext(f_res.getvalue(), detail=1); raw.sort(key=lambda x: x[0][0][1])
-        tms = [t for t in [{"n": engine.clean_team(tx), "y": b[0][1], "x": (b[0][0]+b[1][0])/2} for (b, tx, p) in raw] if t["n"] and hi*0.12 < t["y"] < hi*0.95]
+        raw = reader.readtext(f_res.getvalue(), detail=1)
+        raw.sort(key=lambda x: x[0][0][1])
+        # Filtrage et détection des ancres (équipes à gauche)
+        tms = [t for t in [{"n": engine.clean_team(txt), "y": b[0][1], "x": (b[0][0]+b[1][0])/2} for (b, txt, p) in raw] if t["n"] and hi*0.12 < t["y"] < hi*0.95]
         ancs = []
         for t in tms:
             if t["x"] < mid and (not ancs or abs(t["y"] - ancs[-1]["y"]) > 45): ancs.append(t)
-        extracted = []
+        
+        extracted_matches = []
         for i, a in enumerate(ancs):
+            if len(extracted_matches) >= 10: break
             ys, ye = a["y"]-15, (ancs[i+1]["y"]-15 if i+1 < len(ancs) else hi*0.98)
             inf = {"h": a["n"], "a": "Inconnu", "s": "0:0", "hm": "", "am": "", "mt": ""}
             for (bb, tx, p) in raw:
@@ -238,23 +242,30 @@ with tabs[3]:
                     if tn and cx > mid and tn != inf["h"]: inf["a"] = tn
                     elif re.search(r"^\d[:\-]\d$", tx.strip()) and "MT" not in tx.upper(): inf["s"] = tx
                     elif "MT" in tx.upper(): inf["mt"] = tx
-            if inf["a"] != "Inconnu": extracted.append(inf)
+                    elif re.search(r"\d+", tx) and not re.search(r"^\d[:\-]\d$", tx):
+                        if cx < mid: inf["hm"] += f" {tx}'"
+                        else: inf["am"] += f" {tx}'"
+            if inf["a"] != "Inconnu": extracted_matches.append(inf)
         
-        with st.form("form_res"):
-            val_r = []
-            for i, r in enumerate(extracted):
+        with st.form("res_val_form"):
+            final_res_data = []
+            for i, r in enumerate(extracted_matches):
                 st.markdown(f"**{r['h']} vs {r['a']}**")
                 c1, c2 = st.columns(2)
-                fs = c1.text_input("Final", r['s'], key=f"rs_{i}")
-                ms = c2.text_input("MT", r['mt'], key=f"rm_{i}")
-                val_r.append({"h":r['h'], "a":r['a'], "s":fs, "mt":ms, "hm":"", "am":""})
-            if st.form_submit_button("✅ ENREGISTRER LES RÉSULTATS"):
-                jk = f"Journée {j_res}"
-                if jk not in st.session_state['history'][s_active]: st.session_state['history'][s_active][jk] = {"cal":[], "res":[], "pro":[], "rank":[]}
-                st.session_state['history'][s_active][jk]["res"] = val_r
-                st.session_state['history'][s_active][jk]["rank"] = get_standings(st.session_state['history'][s_active], engine.teams_list).to_dict(orient='records')
+                fs = c1.text_input("Score Final", r['s'], key=f"rs{i}")
+                ms = c2.text_input("Score MT", r['mt'], key=f"rm{i}")
+                b1, b2 = st.columns(2)
+                bh = b1.text_input("Buteurs Domicile", r['hm'], key=f"rbh{i}")
+                ba = b2.text_input("Buteurs Extérieur", r['am'], key=f"rba{i}")
+                final_res_data.append({"h":r['h'], "a":r['a'], "s":fs, "mt":ms, "hm":bh, "am":ba})
+            
+            if st.form_submit_button("✅ ENREGISTRER DANS L'HISTORIQUE"):
+                sn, jk = st.session_state['s_active'], f"Journée {j_res}"
+                if jk not in st.session_state['history'][sn]: st.session_state['history'][sn][jk] = {"cal":[], "res":[], "pro":[]}
+                st.session_state['history'][sn][jk]["res"] = final_res_data
                 save_db(st.session_state['history'])
-                custom_notify("Résultats enregistrés !")
+                custom_notify("Résultats enregistrés ! 🤑")
+
 
 # --- TAB 4 : HISTORIQUE ---
 with tabs[4]:
