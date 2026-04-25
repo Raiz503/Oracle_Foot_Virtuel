@@ -18,20 +18,29 @@ class CerveauOracle:
 
     def analyser_match(self, equipe_dom, equipe_ext, cotes, journee, serie_dom, serie_ext, rang_dom, rang_ext):
         """
-        TRANSCRIPTION INTÉGRALE DU PLAYBOOK
+        TRANSCRIPTION INTÉGRALE DU PLAYBOOK - VERSION CORRIGÉE
         """
+        # SÉCURITÉ : On force les séries en texte pour éviter l'erreur Indentation/Attribute
+        s_dom = str(serie_dom) if serie_dom != 0 else ""
+        s_ext = str(serie_ext) if serie_ext != 0 else ""
+
         # --- MODULE 1 : TRAJECTOIRE 6 (Momentum) ---
-        momentum_dom = self._calculer_momentum(serie_dom)
-        momentum_ext = self._calculer_momentum(serie_ext)
+        momentum_dom = self._calculer_momentum(s_dom)
+        momentum_ext = self._calculer_momentum(s_ext)
         
         # --- MODULE 3 : FATIGUE & PLAFOND DE VERRE ---
-        # Si 3 victoires consécutives, risque de chute (Loi du Plafond)
-        plafond_dom = 0.88 if serie_dom.endswith("V V V") else 1.0
-        plafond_ext = 0.88 if serie_ext.endswith("V V V") else 1.0
+        # Si 3 victoires consécutives, risque de chute (-12% d'efficacité)
+        plafond_dom = 0.88 if "V V V" in s_dom else 1.0
+        plafond_ext = 0.88 if "V V V" in s_ext else 1.0
 
-        # Calcul de la force offensive de base (Cerveau 1)
-        force_dom = (3.0 / cotes[0]) * momentum_dom * plafond_dom
-        force_ext = (3.0 / cotes[2]) * momentum_ext * plafond_ext
+        # --- MODULE 2.A : LOI DU RELÂCHEMENT (Post-Sommet) ---
+        # Si le dernier match était une victoire contre un "Big Four", -7% d'efficacité
+        relachement_dom = 0.93 if (s_dom.endswith("V") and any(b in s_dom for b in self.big_four)) else 1.0
+        relachement_ext = 0.93 if (s_ext.endswith("V") and any(b in s_ext for b in self.big_four)) else 1.0
+
+        # Calcul de la force offensive (Cerveau 1 + Modules)
+        force_dom = (3.0 / cotes[0]) * momentum_dom * plafond_dom * relachement_dom
+        force_ext = (3.0 / cotes[2]) * momentum_ext * plafond_ext * relachement_ext
         
         # --- ADN DES ÉQUIPES ---
         force_dom, force_ext = self._appliquer_adn(equipe_dom, equipe_ext, force_dom, force_ext, rang_dom, rang_ext)
@@ -42,13 +51,13 @@ class CerveauOracle:
         alertes = []
         confiance = "MEDIUM"
         
-        # --- MODULE 2 : MSS (Loi de Survie Critique) ---
+        # --- MODULE 2.B : MSS (Loi de Survie Critique) ---
         if journee > 30:
             if rang_dom >= 17 and cotes[0] > 2.2:
-                alertes.append(f"⚠️ SURVIE (MSS) : {equipe_dom} joue son maintien !")
+                alertes.append(f"⚠️ MSS : {equipe_dom} joue sa survie !")
                 confiance = "RISQUE"
             if rang_ext >= 17 and cotes[2] > 2.2:
-                alertes.append(f"⚠️ SURVIE (MSS) : {equipe_ext} joue son maintien !")
+                alertes.append(f"⚠️ MSS : {equipe_ext} joue sa survie !")
                 confiance = "RISQUE"
 
         # --- MODULE 4 : DÉCISION (Indice de Value) ---
@@ -69,35 +78,26 @@ class CerveauOracle:
         }
 
     def _calculer_momentum(self, serie):
-        """Module 1 : Analyse la dynamique (+15% ou -15%)"""
-        if not serie: return 1.0
-        derniers = serie.replace(" ", "")[-2:] # On regarde les 2 derniers matchs
+        if not serie or len(serie) < 2: return 1.0
+        # Nettoyage pour ne garder que les lettres
+        clean = serie.replace(" ", "")
+        derniers = clean[-2:] 
         if derniers == "VV": return 1.15
         if derniers == "DD": return 0.85
         return 1.0
 
     def _appliquer_adn(self, h, a, f_h, f_a, r_h, r_a):
-        """Applique les profils spécifiques du Playbook"""
         # Loi du 'Giant Killer' (Brentford)
         if self.profils.get(h) == "GIANT_KILLER" and a in self.big_four:
-            f_h *= 1.10 # Boost à domicile contre les gros
-        
+            f_h *= 1.12 
         # Loi 'Lanterne' (Sunderland)
         if self.profils.get(a) == "LANTERNE" and r_h < 10:
-            f_a *= 0.90 # Faiblesse chronique à l'extérieur
-            
-        # Loi 'Explosif' (Liverpool)
-        if self.profils.get(h) == "EXPLOSIF" or self.profils.get(a) == "EXPLOSIF":
-            # Instabilité offensive : peut augmenter les scores
-            pass 
-            
+            f_a *= 0.85
         return f_h, f_a
 
     def calculer_performance_globale(self, historique_saison):
-        """Calcul du rating de précision"""
         stats = {"total": 0, "1n2": 0, "exacts": 0, "pts": 0}
         if not historique_saison: return self._vident()
-
         for jk, data in historique_saison.items():
             res, pro = data.get("res", []), data.get("pro", [])
             for r, p in zip(res, pro):
@@ -112,7 +112,6 @@ class CerveauOracle:
                     if (s_r_h > s_r_a and s_p_h > s_p_a) or (s_r_a > s_r_h and s_p_a > s_p_h) or (s_r_h == s_r_a and s_p_h == s_p_a):
                         stats["1n2"] += 1 ; stats["pts"] += 1
                 except: continue
-
         total = stats["total"] or 1
         return {
             "total_matchs": stats["total"],
