@@ -13,7 +13,7 @@ class CerveauFinancier:
         # Extraction des scores du texte "X:Y" du Cerveau 1
         try:
             s_dom, s_ext = map(int, score_predit.split(':'))
-        except:
+        except (ValueError, AttributeError):
             s_dom, s_ext = 1, 1
 
         # Transformation rudimentaire des scores en probabilités (Base 100%)
